@@ -29,6 +29,10 @@
           <span class="score-value">Player 1</span>
         </div>
       </div>
+      <div id="controls">
+        <label for="cross-count">Intersections</label>
+        <input type="number" id="cross-count" min="4" max="30" step="1" value="12" />
+      </div>
       <div id="buttons">
         <button id="btn-confirm" class="btn">Confirm</button>
         <button id="btn-new" class="btn">New</button>
@@ -37,6 +41,14 @@
     </div>
 
     <div id="toast" hidden></div>
+    <div id="game-over" hidden>
+      <div class="game-over-card">
+        <div class="game-over-title">Game Over</div>
+        <div class="game-over-result" id="game-over-result">Player 1 wins!</div>
+        <div class="game-over-score" id="game-over-score">6 — 4</div>
+        <button id="game-over-new" class="btn primary">Play again</button>
+      </div>
+    </div>
   </div>
 
   <script src="splice.js"></script>

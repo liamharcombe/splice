@@ -11,6 +11,7 @@
   const CLAIM_FILL_COLOR_P2 = "rgba(255, 140, 80, 0.5)";
   const PENDING_HALO = "#1478ff";
   const PLAY_BG = "#f5f6f9";
+  const DEFAULT_CROSS_COUNT = 12;
 
   const rootStyle = document.documentElement && document.documentElement.style;
   if (rootStyle){
@@ -264,9 +265,10 @@
   // --------------------------- Core game model --------------------------------
 
   class SpliceGame {
-    constructor(seed=null, min_cross_sep=0.6, min_cross_angle_deg=25.0){
+    constructor(seed=null, min_cross_sep=0.6, min_cross_angle_deg=25.0, target_crosses=10){
       this.min_cross_sep = +min_cross_sep;
       this.min_cross_angle_rad = (Math.PI/180)*(+min_cross_angle_deg);
+      this.target_crosses = Math.max(4, Math.min(60, Math.round(+target_crosses || 10)));
       this.seed = set_seed(seed);
       const [nodes,edges] = this._make_good_random_graph();
       this.nodes = nodes; this.edges=edges;
@@ -278,21 +280,32 @@
       this.scores=[0,0];
       this.claimed=[];
       this.seen_simple_cycles=new Set();
+      this.finished=false;
       this._update_seen_cycles();
       this.port_radius_world = null; // renderer will set
     }
 
     _make_good_random_graph(){
-      for (let tries=0; tries<256; tries++){
+      let best=null;
+      let bestDiff=Infinity;
+      for (let tries=0; tries<512; tries++){
         const r = Math.max(5.0, 2.0*this.min_cross_sep);
         const poly = random_fourier_closed_polyline(140,4,r);
         const res = build_immersed_graph(poly, this.min_cross_sep, this.min_cross_angle_rad);
         if (res){
           const [nodes, edges] = res;
           const n_cross = nodes.reduce((a,n)=>a+(n.type==='cross'?1:0),0);
-          if (n_cross>=6) return [nodes, edges];
+          if (n_cross>=4){
+            const diff=Math.abs(n_cross - this.target_crosses);
+            if (diff===0) return [nodes, edges];
+            if (!best || diff<bestDiff || (diff===bestDiff && n_cross>best.crosses)){
+              best={nodes, edges, crosses:n_cross};
+              bestDiff=diff;
+            }
+          }
         }
       }
+      if (best) return [best.nodes, best.edges];
       throw new Error("Could not generate a curve meeting spacing/angle constraints; loosen parameters or retry.");
     }
 
@@ -593,8 +606,35 @@
         }
       }
       this._update_seen_cycles();
+      const lastMover=this.player;
+      const result={moved:true, awards:new_awards};
+
+      this.finished=this.isGameOver();
+      if (this.finished){
+        const winner=this.currentWinner();
+        result.gameOver={
+          winner,
+          scores:[...this.scores],
+          tie:winner==null,
+          lastMover,
+        };
+      }
+
       this.player ^= 1;
-      return {moved:true, awards:new_awards};
+      return result;
+    }
+
+    isGameOver(){
+      for (let nid=0; nid<this.nodes.length; nid++){
+        const node=this.nodes[nid];
+        if (node.type==='cross' && this.cross_state[nid]==='X') return false;
+      }
+      return true;
+    }
+
+    currentWinner(){
+      if (this.scores[0]===this.scores[1]) return null;
+      return (this.scores[0]>this.scores[1]) ? 0 : 1;
     }
 
     find_nearest_crossing(sx, sy, world_to_screen, max_pix=14){
@@ -611,6 +651,7 @@
     }
 
     cycle_crossing_state(nid){
+      if (this.finished) return;
       let cur=this.cross_state[nid];
       if (this.pending_cross && this.pending_cross[0]===nid) cur=this.pending_cross[1];
       const nxt={X:'A',A:'B',B:'X'}[cur];
@@ -968,15 +1009,24 @@
 
       if (scoreP1) scoreP1.textContent = this.game.scores[0];
       if (scoreP2) scoreP2.textContent = this.game.scores[1];
-      if (turnValue) turnValue.textContent = `Player ${this.game.player+1}`;
+      const finished=this.game.finished;
+      if (turnValue){
+        if (finished){
+          const winner=this.game.currentWinner();
+          turnValue.textContent = winner==null ? "Tie Game" : `Winner: Player ${winner+1}`;
+        }else{
+          turnValue.textContent = `Player ${this.game.player+1}`;
+        }
+      }
 
       if (p1Bubble && p2Bubble){
-        p1Bubble.classList.toggle("active", this.game.player===0);
-        p2Bubble.classList.toggle("active", this.game.player===1);
+        p1Bubble.classList.toggle("active", !finished && this.game.player===0);
+        p2Bubble.classList.toggle("active", !finished && this.game.player===1);
       }
       if (turnBubble){
-        turnBubble.classList.toggle("player1-turn", this.game.player===0);
-        turnBubble.classList.toggle("player2-turn", this.game.player===1);
+        turnBubble.classList.toggle("player1-turn", !finished && this.game.player===0);
+        turnBubble.classList.toggle("player2-turn", !finished && this.game.player===1);
+        turnBubble.classList.toggle("finished", finished);
       }
 
       if (this.toastTimer>0){
@@ -989,16 +1039,33 @@
   // -------------------------------- App ---------------------------------------
 
   class App {
-    constructor(seed=null, min_cross_sep=1.5, min_cross_angle_deg=25.0){
+    constructor(seed=null, min_cross_sep=2.0, min_cross_angle_deg=25.0){
       this.canvas = document.getElementById("canvas");
       this._resizeCanvas(); // sets canvas size responsively
 
+      this.baseMinCrossSep = +min_cross_sep;
+      this.baseMinCrossAngleDeg = +min_cross_angle_deg;
+      this.targetCrossCount = this._readCrossCount();
+
       // Robust creation with backoff (ensures you see a curve even on unlucky seeds)
-      this.game = this._makeGameWithBackoff(seed, min_cross_sep, min_cross_angle_deg);
+      this.game = this._makeGameWithBackoff(seed, this.baseMinCrossSep, this.baseMinCrossAngleDeg);
       this.renderer = new Renderer(this.game, this.canvas);
       this.undo_stack=[];
+      this._gameOverHideTimer=null;
       this._bindEvents();
       window.addEventListener("resize", ()=>{ this._resizeCanvas(); this.renderer._compute_view_transform(); });
+    }
+
+    _readCrossCount(){
+      const input = document.getElementById("cross-count");
+      let value = DEFAULT_CROSS_COUNT;
+      if (input){
+        const parsed = parseInt(input.value, 10);
+        if (!Number.isNaN(parsed)) value = parsed;
+        value = Math.max(4, Math.min(30, value));
+        if (`${value}` !== input.value) input.value = `${value}`;
+      }
+      return value;
     }
 
     _makeGameWithBackoff(seed, sep, angDeg){
@@ -1008,10 +1075,10 @@
         {sep: Math.max(1.0, sep*0.66), ang: Math.max(15, angDeg-10)},
       ];
       for (const a of attempts){
-        try{ return new SpliceGame(seed, a.sep, a.ang); }catch(e){}
+        try{ return new SpliceGame(seed, a.sep, a.ang, this.targetCrossCount); }catch(e){}
       }
       // final fallback: new seed + relaxed
-      return new SpliceGame(null, 1.0, 15.0);
+      return new SpliceGame(null, 1.0, 15.0, this.targetCrossCount);
     }
 
     _resizeCanvas(){
@@ -1051,10 +1118,11 @@
         owner:c.owner, outside:c.outside
       }));
       const seen=new Set(this.game.seen_simple_cycles);
-      return {cs, player, scores, claimed, seen};
+      const finished=this.game.finished;
+      return {cs, player, scores, claimed, seen, finished};
     }
     restore(snap){
-      const {cs, player, scores, claimed, seen} = snap;
+      const {cs, player, scores, claimed, seen, finished} = snap;
       this.game.cross_state={...cs};
       this.game.player=player;
       this.game.scores=[...scores];
@@ -1065,33 +1133,35 @@
         owner:c.owner, outside:c.outside
       }));
       this.game.seen_simple_cycles=new Set(seen);
+      this.game.finished=!!finished;
       this.game.pending_cross=null;
     }
 
     _bindEvents(){
-      document.getElementById("btn-confirm").addEventListener("click", ()=>{
-        if (this.game.pending_cross){
-          this.undo_stack.push(this.snapshot());
-          const {awards=[]}=this.game.commit_and_score();
-          if (awards.length){
-            const msg = awards.map(a => `+1 ${a.type==='outside'?'outside':'disk'} (P${a.player+1})`).join("; ");
-            this.renderer.showToast(msg, 1500);
-          }
-        }
-      });
-      document.getElementById("btn-new").addEventListener("click", ()=>{
-        this.game = this._makeGameWithBackoff(null, this.game.min_cross_sep, (this.game.min_cross_angle_rad*180/Math.PI));
-        this.renderer = new Renderer(this.game, this.canvas);
-        this.undo_stack=[];
-      });
+      const btnConfirm=document.getElementById("btn-confirm");
+      if (btnConfirm){
+        btnConfirm.addEventListener("click", ()=>{ this._commitPending(); });
+      }
+      const btnNew=document.getElementById("btn-new");
+      if (btnNew){
+        btnNew.addEventListener("click", ()=>{ this._startNewGame(); });
+      }
       document.getElementById("btn-undo").addEventListener("click", ()=>{
         if (this.undo_stack.length){
           this.restore(this.undo_stack.pop());
+          this._syncGameOverOverlay();
         }
       });
+      const btnOverlayNew=document.getElementById("game-over-new");
+      if (btnOverlayNew){
+        btnOverlayNew.addEventListener("click", ()=>{
+          if (btnNew){ btnNew.click(); }
+          else{ this._startNewGame(); }
+        });
+      }
 
       this.canvas.addEventListener("mousedown", (ev)=>{
-        if (ev.button!==0) return;
+        if (ev.button!==0 || this.game.finished) return;
         const rect=this.canvas.getBoundingClientRect();
         // because we scaled the context by DPR, use CSS pixels here
         const sx = ev.clientX - rect.left;
@@ -1113,22 +1183,91 @@
 
       window.addEventListener("keydown", (ev)=>{
         if (ev.key==="Enter" || ev.key==="c"){
-          if (this.game.pending_cross){
-            this.undo_stack.push(this.snapshot());
-            const {awards=[]}=this.game.commit_and_score();
-            if (awards.length){
-              const msg = awards.map(a => `+1 ${a.type==='outside'?'outside':'disk'} (P${a.player+1})`).join("; ");
-              this.renderer.showToast(msg, 1500);
-            }
-          }
+          this._commitPending();
         }else if (ev.key==="n"){
-          this.game = this._makeGameWithBackoff(null, this.game.min_cross_sep, (this.game.min_cross_angle_rad*180/Math.PI));
-          this.renderer = new Renderer(this.game, this.canvas);
-          this.undo_stack=[];
+          this._startNewGame();
         }else if (ev.key==="u" || ev.key==="Backspace"){
           if (this.undo_stack.length) this.restore(this.undo_stack.pop());
+          this._syncGameOverOverlay();
         }
       });
+    }
+
+    _commitPending(){
+      if (!this.game.pending_cross) return;
+      this.undo_stack.push(this.snapshot());
+      const result=this.game.commit_and_score();
+      const awards=result && result.awards ? result.awards : [];
+      if (awards.length){
+        const msg = awards.map(a => `+1 ${a.type==='outside'?'outside':'disk'} (P${a.player+1})`).join("; ");
+        this.renderer.showToast(msg, 1500);
+      }
+      if (result && result.gameOver){
+        this._showGameOver(result.gameOver);
+      }else{
+        this._hideGameOver();
+      }
+    }
+
+    _startNewGame(){
+      this.targetCrossCount = this._readCrossCount();
+      this.game = this._makeGameWithBackoff(null, this.baseMinCrossSep, this.baseMinCrossAngleDeg);
+      this.renderer = new Renderer(this.game, this.canvas);
+      this.undo_stack=[];
+      this._hideGameOver(true);
+    }
+
+    _syncGameOverOverlay(){
+      if (this.game.finished){
+        this._showGameOver({
+          winner:this.game.currentWinner(),
+          scores:[...this.game.scores],
+          tie:this.game.currentWinner()==null,
+        });
+      }else{
+        this._hideGameOver();
+      }
+    }
+
+    _showGameOver(detail){
+      const overlay=document.getElementById("game-over");
+      if (!overlay) return;
+      const resultEl=document.getElementById("game-over-result");
+      const scoreEl=document.getElementById("game-over-score");
+      const scores = detail && detail.scores ? detail.scores : this.game.scores;
+      if (scoreEl && scores){ scoreEl.textContent = `${scores[0]} — ${scores[1]}`; }
+      if (resultEl){
+        if (detail && detail.tie){
+          resultEl.textContent = "It's a tie!";
+        }else{
+          const winner = detail && typeof detail.winner === "number" ? detail.winner : this.game.currentWinner();
+          resultEl.textContent = winner==null ? "Game complete" : `Player ${winner+1} wins!`;
+        }
+      }
+      if (this._gameOverHideTimer){
+        clearTimeout(this._gameOverHideTimer);
+        this._gameOverHideTimer=null;
+      }
+      overlay.hidden=false;
+      requestAnimationFrame(()=>overlay.classList.add("show"));
+    }
+
+    _hideGameOver(immediate=false){
+      const overlay=document.getElementById("game-over");
+      if (!overlay) return;
+      overlay.classList.remove("show");
+      if (this._gameOverHideTimer){
+        clearTimeout(this._gameOverHideTimer);
+        this._gameOverHideTimer=null;
+      }
+      if (immediate){
+        overlay.hidden=true;
+        return;
+      }
+      this._gameOverHideTimer = setTimeout(()=>{
+        overlay.hidden=true;
+        this._gameOverHideTimer=null;
+      }, 220);
     }
 
     run(){
@@ -1144,6 +1283,6 @@
 
   // ------------------------------ Boot ----------------------------------------
   // Build with defaults similar to your Pygame main()
-  const app = new App(null, 1.5, 25.0);
+  const app = new App(null, 2.0, 25.0);
   app.run();
 })();
