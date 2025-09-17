@@ -20,9 +20,16 @@ html, body{ margin:0; height:100%; background:var(--bg); color:var(--text); font
   background: var(--play-bg);
   border-radius: 10px;
   overflow: hidden;
+  transition: filter 180ms ease-out;
   /* height is controlled by JS via the canvas element */
 }
-#canvas{ display:block; /* JS sets width/height for a square, DPR-aware canvas */ }
+#play-area.blurred{
+  filter: blur(6px);
+}
+#canvas{
+  display:block; /* JS sets width/height for a square, DPR-aware canvas */
+  margin:0 auto;
+}
 #hud{
   display:flex; justify-content: space-between; align-items:center;
   margin-top: 10px; flex-wrap: wrap; gap:10px;
@@ -167,6 +174,14 @@ html, body{ margin:0; height:100%; background:var(--bg); color:var(--text); font
   letter-spacing:0.08em;
   margin-bottom:26px;
   color:#1b2758;
+}
+.game-over-actions{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.game-over-actions .btn{
+  width:100%;
 }
 @keyframes gameOverPop{
   0%{ opacity:0; transform:translateY(18px) scale(0.94); }

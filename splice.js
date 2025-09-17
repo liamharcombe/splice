@@ -12,7 +12,7 @@
   const PENDING_HALO = "#1478ff";
   const PLAY_BG = "#f5f6f9";
   const DEFAULT_CROSS_COUNT = 12;
-  const RAYMOND_EGG_ENABLED = true; // flip to false to skip the Raymond victory reveal
+  const RAYMOND_EGG_ENABLED = false; // disabled per request
 
   const rootStyle = document.documentElement && document.documentElement.style;
   if (rootStyle){
@@ -1042,6 +1042,7 @@
   class App {
     constructor(seed=null, min_cross_sep=2.0, min_cross_angle_deg=25.0){
       this.canvas = document.getElementById("canvas");
+      this.playArea = document.getElementById("play-area");
       this._resizeCanvas(); // sets canvas size responsively
 
       this.baseMinCrossSep = +min_cross_sep;
@@ -1110,6 +1111,11 @@
       ctx.scale(dpr, dpr); // draw in CSS pixels
     }
 
+    _setBoardBlurred(active){
+      if (!this.playArea) return;
+      this.playArea.classList.toggle("blurred", !!active);
+    }
+
     snapshot(){
       const cs={...this.game.cross_state};
       const player=this.game.player;
@@ -1160,6 +1166,31 @@
         btnOverlayNew.addEventListener("click", ()=>{
           if (btnNew){ btnNew.click(); }
           else{ this._startNewGame(); }
+        });
+      }
+      const btnOverlayView=document.getElementById("game-over-view");
+      if (btnOverlayView){
+        btnOverlayView.addEventListener("click", ()=>{
+          this._hideGameOver(true);
+        });
+      }
+      const crossInput=document.getElementById("cross-count");
+      if (crossInput){
+        const apply=()=>{
+          const prevTarget=this.targetCrossCount;
+          const nextTarget=this._readCrossCount();
+          if (nextTarget===prevTarget && this.game && !this.game.finished && this.game.nodes){
+            return;
+          }
+          this.targetCrossCount=nextTarget;
+          this._startNewGame();
+        };
+        crossInput.addEventListener("change", apply);
+        crossInput.addEventListener("keydown", (ev)=>{
+          if (ev.key==="Enter"){
+            ev.preventDefault();
+            apply();
+          }
         });
       }
 
@@ -1219,6 +1250,7 @@
       this.undo_stack=[];
       this._hideGameOver(true);
       this._forceHideRaymondEgg();
+      this._setBoardBlurred(false);
     }
 
     _syncGameOverOverlay(){
@@ -1253,6 +1285,7 @@
     _renderGameOverCard(detail){
       const overlay=document.getElementById("game-over");
       if (!overlay) return;
+      this._setBoardBlurred(true);
       const resultEl=document.getElementById("game-over-result");
       const scoreEl=document.getElementById("game-over-score");
       const scores = detail && detail.scores ? detail.scores : this.game.scores;
@@ -1277,6 +1310,7 @@
       const overlay=document.getElementById("game-over");
       if (!overlay) return;
       overlay.classList.remove("show");
+      this._setBoardBlurred(false);
       if (this._gameOverHideTimer){
         clearTimeout(this._gameOverHideTimer);
         this._gameOverHideTimer=null;
