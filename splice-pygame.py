@@ -5,7 +5,7 @@ Splice (pygame edition) — a 2-player smoothing game on a random immersed close
 
 How to run
 ----------
-$ python splice.py
+$ python splice_pygame.py
 
 Requires: Python 3.9+, numpy, pygame.
 
@@ -32,8 +32,6 @@ import math
 import random
 import sys
 from collections import defaultdict, namedtuple
-
-import asyncio
 
 import numpy as np
 import pygame
@@ -1439,7 +1437,7 @@ class App:
         self.game.seen_simple_cycles = set(seen)
         self.game.pending_cross = None
 
-    async def run(self):
+    def run(self):
         toast = None
         toast_timer = 0
         running = True
@@ -1536,21 +1534,21 @@ class App:
 
             self.renderer.draw(toast_text=toast)
             pygame.display.flip()
-
-            await asyncio.sleep(0)
         pygame.quit()
 
 # --------------------------------- Main ----------------------------------------
 
-async def main():
+def main():
     seed = None
     if len(sys.argv) > 1:
         try:
             seed = int(sys.argv[1])
         except Exception:
             seed = None
+    # You can tweak constraints here if you like:
     app = App(seed=seed, min_cross_sep=1.5, min_cross_angle_deg=25.0)
-    await app.run()
+    app.run()
+    
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
