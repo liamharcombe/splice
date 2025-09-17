@@ -125,8 +125,7 @@ html, body{ margin:0; height:100%; background:var(--bg); color:var(--text); font
   align-items:center;
   justify-content:center;
   padding:24px;
-  background:rgba(12, 16, 32, 0.58);
-  backdrop-filter: blur(9px);
+  background:rgba(12, 16, 32, 0.36);
   z-index:20;
   opacity:0;
   pointer-events:none;
@@ -172,4 +171,34 @@ html, body{ margin:0; height:100%; background:var(--bg); color:var(--text); font
 @keyframes gameOverPop{
   0%{ opacity:0; transform:translateY(18px) scale(0.94); }
   100%{ opacity:1; transform:translateY(0) scale(1); }
+}
+#raymond-egg{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:30;
+  pointer-events:none;
+  opacity:0;
+  transition:opacity 150ms ease-out;
+}
+#raymond-egg.active{ opacity:1; }
+#raymond-egg[hidden]{ display:none; }
+#raymond-egg img{
+  height:100vh;
+  width:auto;
+  max-width:none;
+  transform-origin:center;
+  transform:scale(0.05);
+  opacity:0;
+}
+#raymond-egg img.raymond-animate{
+  animation: raymondZoom 720ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes raymondZoom{
+  0%{ transform:scale(0.05); opacity:0; }
+  20%{ opacity:1; }
+  70%{ transform:scale(1.05); }
+  100%{ transform:scale(1); opacity:1; }
 }

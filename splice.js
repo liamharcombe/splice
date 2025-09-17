@@ -12,6 +12,7 @@
   const PENDING_HALO = "#1478ff";
   const PLAY_BG = "#f5f6f9";
   const DEFAULT_CROSS_COUNT = 12;
+  const RAYMOND_EGG_ENABLED = true; // flip to false to skip the Raymond victory reveal
 
   const rootStyle = document.documentElement && document.documentElement.style;
   if (rootStyle){
@@ -1052,6 +1053,8 @@
       this.renderer = new Renderer(this.game, this.canvas);
       this.undo_stack=[];
       this._gameOverHideTimer=null;
+      this._gameOverPendingPromise=null;
+      this._raymondHoldTimer=null;
       this._bindEvents();
       window.addEventListener("resize", ()=>{ this._resizeCanvas(); this.renderer._compute_view_transform(); });
     }
@@ -1203,7 +1206,7 @@
         this.renderer.showToast(msg, 1500);
       }
       if (result && result.gameOver){
-        this._showGameOver(result.gameOver);
+        this._handleGameOver(result.gameOver, {triggerEgg:true});
       }else{
         this._hideGameOver();
       }
@@ -1215,21 +1218,39 @@
       this.renderer = new Renderer(this.game, this.canvas);
       this.undo_stack=[];
       this._hideGameOver(true);
+      this._forceHideRaymondEgg();
     }
 
     _syncGameOverOverlay(){
       if (this.game.finished){
-        this._showGameOver({
+        this._handleGameOver({
           winner:this.game.currentWinner(),
           scores:[...this.game.scores],
           tie:this.game.currentWinner()==null,
-        });
+        }, {triggerEgg:false});
       }else{
         this._hideGameOver();
+        this._forceHideRaymondEgg();
       }
     }
 
-    _showGameOver(detail){
+    _handleGameOver(detail, {triggerEgg=false}={}){
+      const showCard=()=>{ this._renderGameOverCard(detail); };
+      if (!triggerEgg || !RAYMOND_EGG_ENABLED){
+        if (!this._gameOverPendingPromise) showCard();
+        return;
+      }
+      if (this._gameOverPendingPromise){
+        // animation already underway, output will run when it completes
+        return;
+      }
+      this._gameOverPendingPromise = this._playVictoryEgg()
+        .catch(()=>{})
+        .then(showCard)
+        .finally(()=>{ this._gameOverPendingPromise=null; });
+    }
+
+    _renderGameOverCard(detail){
       const overlay=document.getElementById("game-over");
       if (!overlay) return;
       const resultEl=document.getElementById("game-over-result");
@@ -1268,6 +1289,60 @@
         overlay.hidden=true;
         this._gameOverHideTimer=null;
       }, 220);
+    }
+
+    _playVictoryEgg(){
+      const egg=document.getElementById("raymond-egg");
+      const img = egg ? egg.querySelector("img") : null;
+      if (!egg || !img) return Promise.resolve();
+      return new Promise((resolve)=>{
+        if (this._raymondHoldTimer){
+          clearTimeout(this._raymondHoldTimer);
+          this._raymondHoldTimer=null;
+        }
+        egg.hidden=false;
+        egg.classList.add("active");
+        img.classList.remove("raymond-animate");
+        void img.offsetWidth;
+        const finish=()=>{
+          if (this._raymondHoldTimer){
+            clearTimeout(this._raymondHoldTimer);
+            this._raymondHoldTimer=null;
+          }
+          this._raymondHoldTimer=setTimeout(()=>{
+            egg.classList.remove("active");
+            img.classList.remove("raymond-animate");
+            egg.hidden=true;
+            this._raymondHoldTimer=null;
+            resolve();
+          }, 1000);
+        };
+        const onAnimEnd=()=>{
+          img.removeEventListener("animationend", onAnimEnd);
+          finish();
+        };
+        img.addEventListener("animationend", onAnimEnd, {once:true});
+        const fallback=setTimeout(()=>{
+          img.removeEventListener("animationend", onAnimEnd);
+          finish();
+        }, 900);
+        const clearFallback=()=>{ clearTimeout(fallback); };
+        img.addEventListener("animationend", clearFallback, {once:true});
+        img.classList.add("raymond-animate");
+      });
+    }
+
+    _forceHideRaymondEgg(){
+      const egg=document.getElementById("raymond-egg");
+      const img = egg ? egg.querySelector("img") : null;
+      if (!egg || !img) return;
+      if (this._raymondHoldTimer){
+        clearTimeout(this._raymondHoldTimer);
+        this._raymondHoldTimer=null;
+      }
+      egg.classList.remove("active");
+      img.classList.remove("raymond-animate");
+      egg.hidden=true;
     }
 
     run(){
