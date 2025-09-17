@@ -11,7 +11,7 @@
   const CLAIM_FILL_COLOR_P2 = "rgba(255, 140, 80, 0.5)";
   const PENDING_HALO = "#1478ff";
   const PLAY_BG = "#f5f6f9";
-  const DEFAULT_CROSS_COUNT = 12;
+  const DEFAULT_CROSS_COUNT = 5;
   const RAYMOND_EGG_ENABLED = false; // disabled per request
 
   const rootStyle = document.documentElement && document.documentElement.style;
@@ -1050,7 +1050,17 @@
       this.targetCrossCount = this._readCrossCount();
 
       // Robust creation with backoff (ensures you see a curve even on unlucky seeds)
-      this.game = this._makeGameWithBackoff(seed, this.baseMinCrossSep, this.baseMinCrossAngleDeg);
+      const desired = this.targetCrossCount;
+      const initialGame = this._makeGameWithBackoff(seed, this.baseMinCrossSep, this.baseMinCrossAngleDeg);
+      const initialCrosses = typeof initialGame.crossCount === "number"
+        ? initialGame.crossCount
+        : initialGame.nodes.reduce((sum,node)=>sum+(node.type==='cross'?1:0),0);
+      const mismatch = initialCrosses !== desired;
+      if (mismatch){
+        this.targetCrossCount = initialCrosses;
+        this._setCrossCountInput(initialCrosses);
+      }
+      this.game = initialGame;
       this.renderer = new Renderer(this.game, this.canvas);
       this.undo_stack=[];
       this._gameOverHideTimer=null;
@@ -1058,6 +1068,9 @@
       this._raymondHoldTimer=null;
       this._bindEvents();
       window.addEventListener("resize", ()=>{ this._resizeCanvas(); this.renderer._compute_view_transform(); });
+      if (mismatch){
+        this.renderer.showToast(`Using ${initialCrosses} intersections (closest to requested ${desired}).`, 2400);
+      }
     }
 
     _readCrossCount(){
@@ -1072,17 +1085,49 @@
       return value;
     }
 
+    _setCrossCountInput(value){
+      const input = document.getElementById("cross-count");
+      if (input) input.value = `${value}`;
+    }
+
     _makeGameWithBackoff(seed, sep, angDeg){
       const attempts = [
         {sep, ang: angDeg},
         {sep: Math.max(1.2, sep*0.8), ang: Math.max(20, angDeg-5)},
         {sep: Math.max(1.0, sep*0.66), ang: Math.max(15, angDeg-10)},
       ];
+      const desired = this.targetCrossCount;
+      const MAX_GAME_ATTEMPTS = 48;
+      let bestGame=null;
+      let bestDiff=Infinity;
+      let bestActual=0;
+      let lastError=null;
+      let nextSeed = seed;
       for (const a of attempts){
-        try{ return new SpliceGame(seed, a.sep, a.ang, this.targetCrossCount); }catch(e){}
+        for (let i=0;i<MAX_GAME_ATTEMPTS;i++){
+          try{
+            const game = new SpliceGame(nextSeed, a.sep, a.ang, desired);
+            const actual = game.nodes.reduce((sum,node)=>sum+(node.type==='cross'?1:0),0);
+            game.crossCount = actual;
+            if (actual === desired) return game;
+            const diff = Math.abs(actual - desired);
+            if (!bestGame || diff<bestDiff || (diff===bestDiff && actual>bestActual)){
+              bestGame = game;
+              bestDiff = diff;
+              bestActual = actual;
+            }
+          }catch(e){
+            lastError = e;
+          }
+          nextSeed = null;
+        }
       }
+      if (bestGame) return bestGame;
+      if (lastError) throw lastError;
       // final fallback: new seed + relaxed
-      return new SpliceGame(null, 1.0, 15.0, this.targetCrossCount);
+      const fallbackGame = new SpliceGame(null, 1.0, 15.0, desired);
+      fallbackGame.crossCount = fallbackGame.nodes.reduce((sum,node)=>sum+(node.type==='cross'?1:0),0);
+      return fallbackGame;
     }
 
     _resizeCanvas(){
@@ -1244,13 +1289,25 @@
     }
 
     _startNewGame(){
-      this.targetCrossCount = this._readCrossCount();
-      this.game = this._makeGameWithBackoff(null, this.baseMinCrossSep, this.baseMinCrossAngleDeg);
+      const desired = this._readCrossCount();
+      this.targetCrossCount = desired;
+      const game = this._makeGameWithBackoff(null, this.baseMinCrossSep, this.baseMinCrossAngleDeg);
+      const actualCrosses = typeof game.crossCount === "number"
+        ? game.crossCount
+        : game.nodes.reduce((sum,node)=>sum+(node.type==='cross'?1:0),0);
+      if (actualCrosses !== desired){
+        this.targetCrossCount = actualCrosses;
+        this._setCrossCountInput(actualCrosses);
+      }
+      this.game = game;
       this.renderer = new Renderer(this.game, this.canvas);
       this.undo_stack=[];
       this._hideGameOver(true);
       this._forceHideRaymondEgg();
       this._setBoardBlurred(false);
+      if (actualCrosses !== desired){
+        this.renderer.showToast(`Using ${actualCrosses} intersections (closest to requested ${desired}).`, 2400);
+      }
     }
 
     _syncGameOverOverlay(){
