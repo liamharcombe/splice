@@ -1,0 +1,79 @@
+:root{
+  --bg: #fafafc;
+  --play-bg: #f5f6f9;
+  --text: #0f0f12;
+  --btn-bg: #ebebf0;
+  --btn-bg-hover: #d7d7e1;
+  --btn-border: #b4b4bf;
+  --player1-bg: #507dff;
+  --player2-bg: #ff8c50;
+  --turn-bg: #1f1f28;
+  --bubble-text: #ffffff;
+}
+*{ box-sizing: border-box; }
+html, body{ margin:0; height:100%; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+#app{ max-width:1000px; margin:0 auto; padding:12px; display:flex; flex-direction:column; min-height:100vh; }
+#title{ font-size:20px; font-weight:700; margin:6px 0 10px; }
+#play-area{
+  position: relative;
+  width: 100%;
+  background: var(--play-bg);
+  border-radius: 10px;
+  overflow: hidden;
+  /* height is controlled by JS via the canvas element */
+}
+#canvas{ display:block; /* JS sets width/height for a square, DPR-aware canvas */ }
+#hud{
+  display:flex; justify-content: space-between; align-items:center;
+  margin-top: 10px; flex-wrap: wrap; gap:10px;
+}
+#score{
+  display:flex;
+  gap:12px;
+  font-size:15px;
+  flex-wrap:wrap;
+}
+.score-bubble{
+  min-width:120px;
+  padding:10px 14px;
+  border-radius:14px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  color:var(--bubble-text);
+  box-shadow:0 2px 6px rgba(10, 12, 18, 0.16);
+}
+.score-bubble .score-label{
+  font-size:12px;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  opacity:0.85;
+}
+.score-bubble .score-value{
+  font-size:22px;
+  font-weight:600;
+}
+.score-bubble.player1{ background:var(--player1-bg); }
+.score-bubble.player2{ background:var(--player2-bg); }
+.score-bubble.turn{ background:var(--turn-bg); }
+.score-bubble.turn.player1-turn{ background:var(--player1-bg); }
+.score-bubble.turn.player2-turn{ background:var(--player2-bg); }
+.score-bubble.player1,
+.score-bubble.player2,
+.score-bubble.turn.player1-turn,
+.score-bubble.turn.player2-turn{
+  color:var(--text);
+}
+.score-bubble.active{
+  box-shadow:0 4px 12px rgba(10, 12, 18, 0.28);
+  transform:translateY(-2px);
+}
+#buttons{ display:flex; gap:12px; }
+.btn{
+  padding:10px 18px; border-radius:10px; border:1px solid var(--btn-border);
+  background:var(--btn-bg); cursor:pointer; font-size:15px; min-width:140px;
+}
+.btn:hover{ background: var(--btn-bg-hover); }
+#toast{
+  margin-top: 10px; color:#0a7820; font-weight:600;
+}

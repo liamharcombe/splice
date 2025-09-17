@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Splice (web)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="title">Splice</div>
+
+    <div id="play-area">
+      <canvas id="canvas" width="900" height="900"></canvas>
+    </div>
+
+    <div id="hud">
+      <div id="score">
+        <div class="score-bubble player1">
+          <span class="score-label">Player 1</span>
+          <span class="score-value" id="score-p1">0</span>
+        </div>
+        <div class="score-bubble player2">
+          <span class="score-label">Player 2</span>
+          <span class="score-value" id="score-p2">0</span>
+        </div>
+        <div class="score-bubble turn" id="score-turn">
+          <span class="score-label">Turn</span>
+          <span class="score-value">Player 1</span>
+        </div>
+      </div>
+      <div id="buttons">
+        <button id="btn-confirm" class="btn">Confirm</button>
+        <button id="btn-new" class="btn">New</button>
+        <button id="btn-undo" class="btn">Undo</button>
+      </div>
+    </div>
+
+    <div id="toast" hidden></div>
+  </div>
+
+  <script src="splice.js"></script>
+</body>
+</html>
