@@ -5,7 +5,7 @@ Splice (pygame edition) — a 2-player smoothing game on a random immersed close
 
 How to run
 ----------
-$ python splice_pygame.py
+$ python splice.py
 
 Requires: Python 3.9+, numpy, pygame.
 
