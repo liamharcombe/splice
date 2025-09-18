@@ -992,6 +992,17 @@
         const P2=[ B[0] - alpha*scale_px*tB[0], B[1] - alpha*scale_px*tB[1] ];
         ctx.beginPath(); ctx.moveTo(A[0],A[1]); ctx.bezierCurveTo(P1[0],P1[1], P2[0],P2[1], B[0],B[1]); ctx.stroke();
       };
+      const dir_vec=(from,to)=>{
+        const dx=to[0]-from[0], dy=to[1]-from[1];
+        const L=Math.hypot(dx,dy) || 1;
+        return [dx/L, dy/L];
+      };
+      const orient_vec=(vec,target)=>{
+        if (!vec) return [0,0];
+        if (!target) return [vec[0], vec[1]];
+        const dotProd=vec[0]*target[0] + vec[1]*target[1];
+        return dotProd>=0 ? [vec[0], vec[1]] : [-vec[0], -vec[1]];
+      };
       const draw_bezier_px=(P0,P3,u_in,u_out,R_px,alpha=0.55)=>{
         const P1=[ P0[0] - alpha*R_px*u_in[0], P0[1] - alpha*R_px*u_in[1] ];
         const P2=[ P3[0] - alpha*R_px*u_out[0], P3[1] - alpha*R_px*u_out[1] ];
@@ -1006,9 +1017,20 @@
         if (state==='X'){
           const Cpx=this.world_to_screen_f(this.game.nodes[nid].pos);
           for (const [i,j] of [[0,2],[1,3]]){
-            const [P0,u0]=ends[i], [P3,u3]=ends[j];
-            draw_cubic_dir(P0, Cpx, [-u0[0],-u0[1]], [u0[0],u0[1]], GLOBAL_PORT_RADIUS_PX);
-            draw_cubic_dir(Cpx, P3, [u3[0],u3[1]], [-u3[0],-u3[1]], GLOBAL_PORT_RADIUS_PX);
+            const entry=ends[i], exit=ends[j];
+            if (!entry || !exit) continue;
+            const [P0,u0]=entry;
+            const [P3,u3]=exit;
+            if (!P0 || !P3 || !u0 || !u3) continue;
+            const toCenter = dir_vec(P0, Cpx);
+            const fromCenter = dir_vec(Cpx, P3);
+            const backFromCenter=[-fromCenter[0], -fromCenter[1]];
+            const startTan = orient_vec(u0, toCenter);
+            const centerTanIn = orient_vec(u0, fromCenter);
+            const centerTanOut = orient_vec(u3, fromCenter);
+            const endTan = orient_vec(u3, backFromCenter);
+            draw_cubic_dir(P0, Cpx, startTan, centerTanIn, GLOBAL_PORT_RADIUS_PX);
+            draw_cubic_dir(Cpx, P3, centerTanOut, endTan, GLOBAL_PORT_RADIUS_PX);
           }
         }else if (state==='A'){
           for (const [i,j] of [[0,1],[2,3]]){
