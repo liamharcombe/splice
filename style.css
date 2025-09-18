@@ -17,6 +17,9 @@ html, body{ margin:0; height:100%; background:var(--bg); color:var(--text); font
 .menu-screen[hidden]{
   display:none !important;
 }
+.menu-options[hidden]{
+  display:none !important;
+}
 #game-screen{ display:flex; flex-direction:column; gap:14px; }
 #game-header{
   display:flex;
