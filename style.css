@@ -97,6 +97,18 @@ html, body{ margin:0; height:100%; background:var(--bg); color:var(--text); font
   color:var(--bubble-text);
   box-shadow:0 6px 18px rgba(11, 14, 24, 0.4);
 }
+.score-bubble.turn.finished.player1-win{
+  background:var(--player1-bg);
+  color:var(--text);
+}
+.score-bubble.turn.finished.player2-win{
+  background:var(--player2-bg);
+  color:var(--text);
+}
+.score-bubble.turn.finished.tie{
+  background:linear-gradient(135deg, #161824, #20263c);
+  color:var(--bubble-text);
+}
 .score-bubble.player1,
 .score-bubble.player2,
 .score-bubble.turn.player1-turn,

@@ -583,26 +583,38 @@
 
       const cross_ids = []; for (let i=0;i<this.nodes.length;i++) if (this.nodes[i].type==='cross') cross_ids.push(i);
       if (cross_ids.every(cid=>this.cross_state[cid]!=='X')){
-        const jordan_after = cycles_after.filter(c=>this.is_jordan_cycle(c));
-        if (jordan_after.length===1){
-          const onlyc=jordan_after[0];
-          const already_exact = this.claimed.some(cl=>{
-            const a=SpliceGame._canon_cycle_nodes(cl.nodes.slice(0,-1)).join(",");
-            const b=SpliceGame._canon_cycle_nodes(onlyc.nodes.slice(0,-1)).join(",");
-            return a===b;
-          });
-          if (!already_exact){
-            const poly_sm=this._smoothed_cycle_poly(onlyc.nodes.slice(0,-1), r_map);
-            if (poly_sm.length>=3){
-              const desired_margin_px=12.0;
-              const margin_world = (this.port_radius_world!=null)
-                ? (desired_margin_px/GLOBAL_PORT_RADIUS_PX)*this.port_radius_world
-                : 0.5;
-              const lbl=this._best_label_point(poly_sm, margin_world);
-              this.claimed.push({nodes:onlyc.nodes.slice(), poly:poly_sm.slice(), label:lbl.slice(), owner:this.player, outside:true});
-              this.scores[this.player]+=1;
-              new_awards.push({type:'outside', area:shoelace_area(poly_sm), player:this.player});
+        const jordan_after=[];
+        for (const cycle of cycles_after){
+          if (this.is_jordan_cycle(cycle)){ jordan_after.push(cycle); }
+        }
+        const canonOf = nodes => SpliceGame._canon_cycle_nodes(nodes.slice(0,-1)).join(",");
+        const existingOutside=this.claimed.some(cl=>cl.outside);
+        if (!existingOutside){
+          const claimedOutsideKeys=new Set(
+            this.claimed.filter(cl=>cl.outside).map(cl=>canonOf(cl.nodes))
+          );
+          let bestOuter=null;
+          for (const c of jordan_after){
+            const key=canonOf(c.nodes);
+            if (claimedOutsideKeys.has(key)) continue;
+            const poly_sm=c.poly_sm || this._smoothed_cycle_poly(c.nodes.slice(0,-1), r_map);
+            if (!poly_sm || poly_sm.length<3) continue;
+            const enclosesAllClaims = this.claimed.every(cl => cl.outside || point_in_poly(cl.label, poly_sm));
+            if (!enclosesAllClaims) continue;
+            const area=Math.abs(shoelace_area(poly_sm));
+            if (!bestOuter || area>bestOuter.area){
+              bestOuter={cycle:c, key, poly:poly_sm, area};
             }
+          }
+          if (bestOuter){
+            const desired_margin_px=12.0;
+            const margin_world = (this.port_radius_world!=null)
+              ? (desired_margin_px/GLOBAL_PORT_RADIUS_PX)*this.port_radius_world
+              : 0.5;
+            const lbl=this._best_label_point(bestOuter.poly, margin_world);
+            this.claimed.push({nodes:bestOuter.cycle.nodes.slice(), poly:bestOuter.poly.slice(), label:lbl.slice(), owner:this.player, outside:true});
+            this.scores[this.player]+=1;
+            new_awards.push({type:'outside', area:shoelace_area(bestOuter.poly), player:this.player});
           }
         }
       }
@@ -791,6 +803,7 @@
 
       this.minx=minx; this.maxy=maxy;
       this.offx=offx; this.offy=offy;
+      this.avail_w=avail_w; this.avail_h=avail_h;
 
       this.cross_r_world = 0.045*Math.max(world_w, world_h);
     }
@@ -968,9 +981,19 @@
       // 4) claimed fills
       for (const cl of this.game.claimed){
         const poly=cl.poly;
-        if (poly && poly.length>=3){
-          const pts=poly.map(p=>this.world_to_screen(p));
-          ctx.fillStyle=(cl.owner===0)? CLAIM_FILL_COLOR_P1 : CLAIM_FILL_COLOR_P2;
+        if (!poly || poly.length<3) continue;
+        const pts=poly.map(p=>this.world_to_screen(p));
+        ctx.fillStyle=(cl.owner===0)? CLAIM_FILL_COLOR_P1 : CLAIM_FILL_COLOR_P2;
+        if (cl.outside){
+          const w=this.avail_w ?? (this.canvas.clientWidth || this.canvas.width);
+          const h=this.avail_h ?? (this.canvas.clientHeight || this.canvas.height);
+          ctx.beginPath();
+          ctx.rect(0,0,w,h);
+          ctx.moveTo(pts[0][0],pts[0][1]);
+          for (let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0], pts[i][1]);
+          ctx.closePath();
+          ctx.fill('evenodd');
+        }else{
           ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
           for (let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0], pts[i][1]);
           ctx.closePath(); ctx.fill();
@@ -1011,10 +1034,10 @@
       if (scoreP1) scoreP1.textContent = this.game.scores[0];
       if (scoreP2) scoreP2.textContent = this.game.scores[1];
       const finished=this.game.finished;
+      const winner=this.game.currentWinner();
       if (turnValue){
         if (finished){
-          const winner=this.game.currentWinner();
-          turnValue.textContent = winner==null ? "Tie Game" : `Winner: Player ${winner+1}`;
+          turnValue.textContent = winner==null ? "Tie Game" : `Victory - Player ${winner+1}`;
         }else{
           turnValue.textContent = `Player ${this.game.player+1}`;
         }
@@ -1028,6 +1051,9 @@
         turnBubble.classList.toggle("player1-turn", !finished && this.game.player===0);
         turnBubble.classList.toggle("player2-turn", !finished && this.game.player===1);
         turnBubble.classList.toggle("finished", finished);
+        turnBubble.classList.toggle("player1-win", finished && winner===0);
+        turnBubble.classList.toggle("player2-win", finished && winner===1);
+        turnBubble.classList.toggle("tie", finished && winner==null);
       }
 
       if (this.toastTimer>0){
@@ -1282,9 +1308,9 @@
         this.renderer.showToast(msg, 1500);
       }
       if (result && result.gameOver){
-        this._handleGameOver(result.gameOver, {triggerEgg:true});
+        this._handleGameOver(result.gameOver);
       }else{
-        this._hideGameOver();
+        this._clearVictoryDisplay();
       }
     }
 
@@ -1302,9 +1328,7 @@
       this.game = game;
       this.renderer = new Renderer(this.game, this.canvas);
       this.undo_stack=[];
-      this._hideGameOver(true);
-      this._forceHideRaymondEgg();
-      this._setBoardBlurred(false);
+      this._clearVictoryDisplay();
       if (actualCrosses !== desired){
         this.renderer.showToast(`Using ${actualCrosses} intersections (closest to requested ${desired}).`, 2400);
       }
@@ -1316,27 +1340,20 @@
           winner:this.game.currentWinner(),
           scores:[...this.game.scores],
           tie:this.game.currentWinner()==null,
-        }, {triggerEgg:false});
+        });
       }else{
-        this._hideGameOver();
-        this._forceHideRaymondEgg();
+        this._clearVictoryDisplay();
       }
     }
 
-    _handleGameOver(detail, {triggerEgg=false}={}){
-      const showCard=()=>{ this._renderGameOverCard(detail); };
-      if (!triggerEgg || !RAYMOND_EGG_ENABLED){
-        if (!this._gameOverPendingPromise) showCard();
-        return;
-      }
-      if (this._gameOverPendingPromise){
-        // animation already underway, output will run when it completes
-        return;
-      }
-      this._gameOverPendingPromise = this._playVictoryEgg()
-        .catch(()=>{})
-        .then(showCard)
-        .finally(()=>{ this._gameOverPendingPromise=null; });
+    _handleGameOver(detail){
+      this._clearVictoryDisplay();
+    }
+
+    _clearVictoryDisplay(){
+      this._setBoardBlurred(false);
+      this._hideGameOver(true);
+      this._forceHideRaymondEgg();
     }
 
     _renderGameOverCard(detail){
