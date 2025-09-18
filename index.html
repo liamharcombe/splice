@@ -15,7 +15,6 @@
         <div id="menu-root-options" class="menu-options">
           <button id="menu-start-pvp" class="btn">Player vs Player</button>
           <button id="menu-start-pvc" class="btn">Player vs Computer</button>
-          <button id="menu-start-online" class="btn">Online Multiplayer</button>
           <button id="menu-open-rules" class="btn outline">Rules</button>
         </div>
         <div id="menu-difficulty" class="menu-options" hidden>
@@ -28,38 +27,6 @@
         </div>
         <div class="menu-footer">
           <button id="menu-back" class="btn outline small" hidden>&larr; Back</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="online-setup" class="menu-screen" hidden>
-      <div class="menu-card online-card">
-        <div class="menu-title">Online Multiplayer</div>
-        <p class="menu-tagline">Share the connection code with a friend. No servers needed—just copy and paste.</p>
-        <div class="online-columns">
-          <div class="online-column">
-            <div class="online-heading">Host a Game</div>
-            <p class="online-instructions">1. Click the button to generate a hosting code.<br />2. Send the code to your opponent.<br />3. Paste their answer in the box below and apply.</p>
-            <button id="online-host-create" class="btn primary">Create Hosting Code</button>
-            <label for="online-host-offer" class="online-label">Hosting code</label>
-            <textarea id="online-host-offer" class="online-text" readonly placeholder="Generated code appears here"></textarea>
-            <label for="online-host-answer" class="online-label">Opponent answer</label>
-            <textarea id="online-host-answer" class="online-text" placeholder="Paste answer from opponent"></textarea>
-            <button id="online-host-apply" class="btn">Apply Answer</button>
-          </div>
-          <div class="online-column">
-            <div class="online-heading">Join a Game</div>
-            <p class="online-instructions">1. Paste the host's code and connect.<br />2. Send the generated answer back to the host.</p>
-            <label for="online-guest-offer" class="online-label">Host code</label>
-            <textarea id="online-guest-offer" class="online-text" placeholder="Paste host code here"></textarea>
-            <button id="online-guest-connect" class="btn">Connect &amp; Generate Answer</button>
-            <label for="online-guest-answer" class="online-label">Your answer</label>
-            <textarea id="online-guest-answer" class="online-text" readonly placeholder="Share this answer with the host"></textarea>
-          </div>
-        </div>
-        <div class="online-status" id="online-status">Waiting to start...</div>
-        <div class="menu-footer">
-          <button id="online-cancel" class="btn outline small">&larr; Menu</button>
         </div>
       </div>
     </div>

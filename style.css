@@ -53,7 +53,6 @@ html, body{ margin:0; height:100%; background:var(--bg); color:var(--text); font
   width:100%;
   text-align:center;
 }
-.online-card{ max-width:760px; }
 .menu-title{
   font-size:42px;
   font-weight:800;
@@ -73,59 +72,6 @@ html, body{ margin:0; height:100%; background:var(--bg); color:var(--text); font
   flex-direction:column;
   gap:14px;
   margin-bottom:22px;
-}
-.online-columns{
-  display:flex;
-  flex-wrap:wrap;
-  gap:24px;
-  justify-content:space-between;
-  margin-bottom:20px;
-}
-.online-column{
-  flex:1 1 320px;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  text-align:left;
-}
-.online-heading{
-  font-size:20px;
-  font-weight:700;
-  letter-spacing:0.06em;
-  text-transform:uppercase;
-}
-.online-instructions{
-  font-size:15px;
-  line-height:1.5;
-  color:#2b3049;
-}
-.online-label{
-  font-size:13px;
-  text-transform:uppercase;
-  letter-spacing:0.08em;
-  color:#3a4375;
-}
-.online-text{
-  min-height:96px;
-  border-radius:10px;
-  border:1px solid rgba(47, 74, 150, 0.35);
-  padding:10px 12px;
-  font-size:14px;
-  resize:vertical;
-  background:#f9f9ff;
-}
-.online-text[readonly]{
-  background:#f3f4ff;
-}
-.online-status{
-  margin-top:6px;
-  padding:10px 14px;
-  background:rgba(78, 102, 210, 0.12);
-  border-radius:10px;
-  border:1px solid rgba(65, 83, 210, 0.2);
-  font-weight:600;
-  color:#27326a;
-  text-align:left;
 }
 .menu-difficulty-buttons{
   display:flex;
