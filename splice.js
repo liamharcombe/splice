@@ -289,9 +289,18 @@
     _make_good_random_graph(){
       let best=null;
       let bestDiff=Infinity;
-      for (let tries=0; tries<512; tries++){
-        const r = Math.max(5.0, 2.0*this.min_cross_sep);
-        const poly = random_fourier_closed_polyline(140,4,r);
+      const complexity=Math.max(0, this.target_crosses-6);
+      const extraModes=Math.min(4, Math.floor(complexity/3));
+      const modes=4+extraModes;
+      const baseSamples=140 + Math.min(120, complexity*12);
+      const baseRadius=Math.max(5.0, 2.0*this.min_cross_sep);
+      const radiusScale=1 + 0.12*Math.max(0, this.target_crosses-8);
+      const maxTries = this.target_crosses>=16 ? 1024 : this.target_crosses>=10 ? 800 : 512;
+      for (let tries=0; tries<maxTries; tries++){
+        const jitter=0.85 + RAND()*0.6;
+        const samples = baseSamples + Math.floor(RAND()*24);
+        const r = baseRadius * radiusScale * jitter;
+        const poly = random_fourier_closed_polyline(samples, modes, r);
         const res = build_immersed_graph(poly, this.min_cross_sep, this.min_cross_angle_rad);
         if (res){
           const [nodes, edges] = res;
@@ -637,6 +646,36 @@
       return result;
     }
 
+    cloneState(){
+      const clone=Object.create(SpliceGame.prototype);
+      clone.min_cross_sep=this.min_cross_sep;
+      clone.min_cross_angle_rad=this.min_cross_angle_rad;
+      clone.target_crosses=this.target_crosses;
+      clone.seed=this.seed;
+      clone.nodes=this.nodes;
+      clone.edges=this.edges;
+      clone.halfedges=this.halfedges;
+      clone.stub_to_he=this.stub_to_he;
+      clone.edge_to_he=this.edge_to_he;
+      clone.edge_endpoint_stub=this.edge_endpoint_stub;
+      clone.port_radius_world=this.port_radius_world;
+      clone.cross_state={...this.cross_state};
+      clone.pending_cross=this.pending_cross ? [this.pending_cross[0], this.pending_cross[1]] : null;
+      clone.player=this.player;
+      clone.scores=[...this.scores];
+      clone.claimed=this.claimed.map(c=>({
+        nodes:[...c.nodes],
+        poly:c.poly.map(p=>[+p[0], +p[1]]),
+        label:[+c.label[0], +c.label[1]],
+        owner:c.owner,
+        outside:c.outside
+      }));
+      clone.seen_simple_cycles=new Set(this.seen_simple_cycles);
+      clone.finished=this.finished;
+      clone.crossCount=this.crossCount;
+      return clone;
+    }
+
     isGameOver(){
       for (let nid=0; nid<this.nodes.length; nid++){
         const node=this.nodes[nid];
@@ -769,6 +808,7 @@
       this.game=game;
       this.canvas=canvas;
       this.ctx=canvas.getContext("2d");
+      this.playerNames=["Player 1", "Player 2"];
 
       this._compute_view_transform();
 
@@ -806,6 +846,11 @@
       this.avail_w=avail_w; this.avail_h=avail_h;
 
       this.cross_r_world = 0.045*Math.max(world_w, world_h);
+    }
+
+    setPlayerNames(names){
+      if (!Array.isArray(names) || names.length<2) return;
+      this.playerNames=[`${names[0]}`, `${names[1]}`];
     }
 
     world_to_screen(p){
@@ -1030,16 +1075,27 @@
       const turnValue = turnBubble ? turnBubble.querySelector(".score-value") : null;
       const p1Bubble = document.querySelector("#score .player1");
       const p2Bubble = document.querySelector("#score .player2");
+      const labelP1 = document.querySelector("#score .player1 .score-label");
+      const labelP2 = document.querySelector("#score .player2 .score-label");
+      const playerNames = this.playerNames || ["Player 1", "Player 2"];
 
       if (scoreP1) scoreP1.textContent = this.game.scores[0];
       if (scoreP2) scoreP2.textContent = this.game.scores[1];
+      if (labelP1) labelP1.textContent = playerNames[0] ?? "Player 1";
+      if (labelP2) labelP2.textContent = playerNames[1] ?? "Player 2";
       const finished=this.game.finished;
       const winner=this.game.currentWinner();
       if (turnValue){
         if (finished){
-          turnValue.textContent = winner==null ? "Tie Game" : `Victory - Player ${winner+1}`;
+          if (winner==null){
+            turnValue.textContent = "Tie Game";
+          }else{
+            const winName = playerNames[winner] ?? `Player ${winner+1}`;
+            turnValue.textContent = `Victory - ${winName}`;
+          }
         }else{
-          turnValue.textContent = `Player ${this.game.player+1}`;
+          const curName = playerNames[this.game.player] ?? `Player ${this.game.player+1}`;
+          turnValue.textContent = curName;
         }
       }
 
@@ -1092,11 +1148,52 @@
       this._gameOverHideTimer=null;
       this._gameOverPendingPromise=null;
       this._raymondHoldTimer=null;
+      this.mode=null;
+      this.aiEnabled=false;
+      this.aiPlayerIndex=1;
+      this.aiDepth=1;
+      this.aiDifficultyNames={1:"Depth 1", 3:"Depth 3", 5:"Depth 5"};
+      this._aiThinking=false;
+      this._aiPendingTimer=null;
+      this.menuScreen=document.getElementById("main-menu");
+      this.rulesScreen=document.getElementById("rules-screen");
+      this.gameScreen=document.getElementById("game-screen");
+      this.menuRootOptions=document.getElementById("menu-root-options");
+      this.menuDifficulty=document.getElementById("menu-difficulty");
+      this.menuBackBtn=document.getElementById("menu-back");
+      this.rulesBackBtn=document.getElementById("rules-back");
+      this.menuStartPvpBtn=document.getElementById("menu-start-pvp");
+      this.menuStartPvcBtn=document.getElementById("menu-start-pvc");
+      this.menuStartOnlineBtn=document.getElementById("menu-start-online");
+      this.onlineScreen=document.getElementById("online-setup");
+      this.onlineStatusEl=document.getElementById("online-status");
+      this.onlineHostCreateBtn=document.getElementById("online-host-create");
+      this.onlineHostOffer=document.getElementById("online-host-offer");
+      this.onlineHostAnswer=document.getElementById("online-host-answer");
+      this.onlineHostApplyBtn=document.getElementById("online-host-apply");
+      this.onlineGuestOffer=document.getElementById("online-guest-offer");
+      this.onlineGuestConnectBtn=document.getElementById("online-guest-connect");
+      this.onlineGuestAnswer=document.getElementById("online-guest-answer");
+      this.onlineCancelBtn=document.getElementById("online-cancel");
+      this.aiStatusEl=document.getElementById("ai-status");
+      this.aiDifficultyLabel=document.getElementById("ai-difficulty-label");
+      this.btnConfirm=document.getElementById("btn-confirm");
+      this.btnUndo=document.getElementById("btn-undo");
+      this.btnNew=document.getElementById("btn-new");
+      this.btnReturnMenu=document.getElementById("btn-return-menu");
+      this.onlineActive=false;
+      this.onlineRole=null;
+      this.onlinePlayerIndex=null;
+      this.onlinePeer=null;
+      this.onlineChannel=null;
+      this._suspendOnline=false;
+      this._currentSeed=null;
       this._bindEvents();
       window.addEventListener("resize", ()=>{ this._resizeCanvas(); this.renderer._compute_view_transform(); });
       if (mismatch){
         this.renderer.showToast(`Using ${initialCrosses} intersections (closest to requested ${desired}).`, 2400);
       }
+      this._showMenuRoot();
     }
 
     _readCrossCount(){
@@ -1117,13 +1214,22 @@
     }
 
     _makeGameWithBackoff(seed, sep, angDeg){
+      const desired = this.targetCrossCount;
       const attempts = [
         {sep, ang: angDeg},
         {sep: Math.max(1.2, sep*0.8), ang: Math.max(20, angDeg-5)},
         {sep: Math.max(1.0, sep*0.66), ang: Math.max(15, angDeg-10)},
       ];
-      const desired = this.targetCrossCount;
-      const MAX_GAME_ATTEMPTS = 48;
+      if (desired>=8){
+        attempts.push({sep: Math.max(0.9, sep*0.55), ang: Math.max(12, angDeg-14)});
+      }
+      if (desired>=12){
+        attempts.push({sep: Math.max(0.75, sep*0.45), ang: Math.max(9, angDeg-18)});
+      }
+      if (desired>=16){
+        attempts.push({sep: Math.max(0.65, sep*0.36), ang: Math.max(7, angDeg-24)});
+      }
+      const MAX_GAME_ATTEMPTS = desired>=16 ? 96 : desired>=10 ? 72 : 48;
       let bestGame=null;
       let bestDiff=Infinity;
       let bestActual=0;
@@ -1159,14 +1265,17 @@
     _resizeCanvas(){
       const container = document.getElementById("play-area");
       const hud = document.getElementById("hud");
+      const header = document.getElementById("game-header");
       const title = document.getElementById("title");
       const dpr = window.devicePixelRatio || 1;
 
       const maxSide = 900; // logical cap
-      const cw = Math.min(container.clientWidth, maxSide);
-      // Fit height within viewport so no scrolling needed
-      const availH = Math.max(400, window.innerHeight - hud.offsetHeight - title.offsetHeight - 40);
-      const sideCSS = Math.max(360, Math.min(cw, availH)); // square
+      const cw = container ? Math.min(container.clientWidth, maxSide) : maxSide;
+      const hudHeight = hud ? hud.offsetHeight : 0;
+      const headerHeight = header ? header.offsetHeight : (title ? title.offsetHeight : 0);
+      const chromeAllowance = 56; // padding + breathing room so controls stay in view
+      const availH = Math.max(360, window.innerHeight - hudHeight - headerHeight - chromeAllowance);
+      const sideCSS = Math.max(320, Math.min(cw, availH)); // square
 
       // set CSS size
       this.canvas.style.width = sideCSS + "px";
@@ -1185,6 +1294,319 @@
     _setBoardBlurred(active){
       if (!this.playArea) return;
       this.playArea.classList.toggle("blurred", !!active);
+    }
+
+    _setSectionVisible(node, show){
+      if (!node) return;
+      node.hidden = !show;
+    }
+
+    _cancelPendingAI(){
+      if (this._aiPendingTimer){
+        clearTimeout(this._aiPendingTimer);
+        this._aiPendingTimer=null;
+      }
+      this._aiThinking=false;
+      this._setControlsDisabled(false);
+    }
+
+    _isInMatch(){
+      return this.mode!==null;
+    }
+
+    _isComputerTurn(){
+      return this.aiEnabled && this.game && this.game.player===this.aiPlayerIndex;
+    }
+
+    _isInteractionLocked(){
+      if (!this._isInMatch()) return true;
+      if (this._aiThinking) return true;
+      if (this.onlineActive){
+        if (this.onlinePlayerIndex==null) return true;
+        if (this.game && this.game.player!==this.onlinePlayerIndex) return true;
+      }
+      return this._isComputerTurn();
+    }
+
+    _setControlsDisabled(disabled){
+      if (this.btnConfirm) this.btnConfirm.disabled=!!disabled;
+      if (this.btnUndo) this.btnUndo.disabled = this.onlineActive ? true : !!disabled;
+    }
+
+    _refreshControlsForTurn(){
+      if (this.btnConfirm){
+        if (this.onlineActive){
+          this.btnConfirm.disabled = this._isInteractionLocked();
+        }else if (!this._aiThinking){
+          this.btnConfirm.disabled=false;
+        }
+      }
+    }
+
+    _currentPlayerNames(){
+      if (this.onlineActive){
+        if (this.onlinePlayerIndex===0) return ["You", "Opponent"];
+        if (this.onlinePlayerIndex===1) return ["Opponent", "You"];
+      }
+      if (this.aiEnabled){
+        return ["You", "Computer"];
+      }
+      return ["Player 1", "Player 2"];
+    }
+
+    _playerDisplayName(idx){
+      const names=this._currentPlayerNames();
+      if (idx==null || idx<0 || idx>=names.length) return `Player ${(idx??0)+1}`;
+      return names[idx] ?? `Player ${idx+1}`;
+    }
+
+    _applyPlayerNames(){
+      if (this.renderer && typeof this.renderer.setPlayerNames === "function"){
+        this.renderer.setPlayerNames(this._currentPlayerNames());
+      }
+    }
+
+    _updateAiUi(){
+      if (this.aiStatusEl){
+        this.aiStatusEl.hidden = !(this.aiEnabled && !this.onlineActive);
+      }
+      if (this.aiDifficultyLabel && this.aiEnabled && !this.onlineActive){
+        const name=this.aiDifficultyNames[this.aiDepth] || `Depth ${this.aiDepth}`;
+        this.aiDifficultyLabel.textContent=name;
+      }
+    }
+
+    _resetOnlineState(){
+      if (this.onlineChannel){
+        try{ this.onlineChannel.close(); }catch(_e){}
+      }
+      if (this.onlinePeer){
+        try{ this.onlinePeer.close(); }catch(_e){}
+      }
+      this.onlineActive=false;
+      this.onlineRole=null;
+      this.onlinePlayerIndex=null;
+      this.onlinePeer=null;
+      this.onlineChannel=null;
+      this._suspendOnline=false;
+      this._currentSeed=null;
+      if (this.onlineHostOffer) this.onlineHostOffer.value="";
+      if (this.onlineHostAnswer) this.onlineHostAnswer.value="";
+      if (this.onlineGuestOffer) this.onlineGuestOffer.value="";
+      if (this.onlineGuestAnswer) this.onlineGuestAnswer.value="";
+      if (this.onlineStatusEl) this.onlineStatusEl.textContent="Waiting to start...";
+      if (this.btnUndo) this.btnUndo.disabled=false;
+      if (this.btnNew) this.btnNew.disabled=false;
+      const crossInput=document.getElementById("cross-count");
+      if (crossInput) crossInput.disabled=false;
+      this._refreshControlsForTurn();
+    }
+
+    _setMenuSelection(active){
+      if (this.menuStartPvpBtn){
+        this.menuStartPvpBtn.classList.toggle("primary", active==="pvp");
+      }
+      if (this.menuStartPvcBtn){
+        this.menuStartPvcBtn.classList.toggle("primary", active==="pvc");
+      }
+      if (this.menuStartOnlineBtn){
+        this.menuStartOnlineBtn.classList.toggle("primary", active==="online");
+      }
+    }
+
+    _showMenuRoot(){
+      this._cancelPendingAI();
+      this._resetOnlineState();
+      this.mode=null;
+      this.aiEnabled=false;
+      this._updateAiUi();
+      this._setSectionVisible(this.gameScreen, false);
+      this._setSectionVisible(this.rulesScreen, false);
+      this._setSectionVisible(this.onlineScreen, false);
+      this._setSectionVisible(this.menuScreen, true);
+      if (this.menuRootOptions) this.menuRootOptions.hidden=false;
+      if (this.menuDifficulty) this.menuDifficulty.hidden=true;
+      if (this.menuBackBtn) this.menuBackBtn.hidden=true;
+      this._setMenuSelection(null);
+      this._setBoardBlurred(false);
+      this._hideGameOver(true);
+      this._forceHideRaymondEgg();
+      this._applyPlayerNames();
+    }
+
+    _showDifficultySelector(){
+      this._setSectionVisible(this.menuScreen, true);
+      if (this.menuRootOptions) this.menuRootOptions.hidden=true;
+      if (this.menuDifficulty) this.menuDifficulty.hidden=false;
+      if (this.menuBackBtn) this.menuBackBtn.hidden=false;
+      this._setMenuSelection("pvc");
+    }
+
+    _showOnlineSetup(){
+      this._cancelPendingAI();
+      this._resetOnlineState();
+      this._setSectionVisible(this.menuScreen, false);
+      this._setSectionVisible(this.rulesScreen, false);
+      this._setSectionVisible(this.gameScreen, false);
+      this._setSectionVisible(this.onlineScreen, true);
+      if (this.menuBackBtn) this.menuBackBtn.hidden=true;
+      this._setMenuSelection("online");
+      if (this.onlineStatusEl) this.onlineStatusEl.textContent = "Waiting to start...";
+    }
+
+    _showRulesScreen(){
+      this._cancelPendingAI();
+      this._setMenuSelection(null);
+      this._setSectionVisible(this.menuScreen, false);
+      this._setSectionVisible(this.gameScreen, false);
+      this._setSectionVisible(this.rulesScreen, true);
+    }
+
+    _returnToMenu(){
+      this._showMenuRoot();
+    }
+
+    _enterGameMode(mode, depth=1){
+      this._cancelPendingAI();
+      this.mode=mode;
+      this.aiEnabled = (mode === "pvc");
+      if (this.aiEnabled){
+        this.aiDepth=Math.max(1, depth|0);
+      }
+      this._updateAiUi();
+      this._setSectionVisible(this.menuScreen, false);
+      this._setSectionVisible(this.rulesScreen, false);
+      this._setSectionVisible(this.gameScreen, true);
+      if (this.menuRootOptions) this.menuRootOptions.hidden=false;
+      if (this.menuDifficulty) this.menuDifficulty.hidden=true;
+      if (this.menuBackBtn) this.menuBackBtn.hidden=true;
+      this._setMenuSelection(null);
+      this._resizeCanvas();
+      this.renderer._compute_view_transform();
+      this._startNewGame();
+      this._queueAIMoveIfNeeded();
+    }
+
+    _queueAIMoveIfNeeded(){
+      if (!this.aiEnabled) return;
+      if (!this._isInMatch()) return;
+      if (!this.game || this.game.finished) return;
+      if (this._aiThinking) return;
+      if (this.game.player !== this.aiPlayerIndex) return;
+      this._aiThinking=true;
+      this._setControlsDisabled(true);
+      this._aiPendingTimer = window.setTimeout(()=>{ this._executeAIMove(); }, 140);
+    }
+
+    _executeAIMove(){
+      this._aiPendingTimer=null;
+      if (!this.aiEnabled || !this._isInMatch() || !this.game || this.game.finished || this.game.player!==this.aiPlayerIndex){
+        this._aiThinking=false;
+        this._setControlsDisabled(false);
+        return;
+      }
+      let move=null;
+      if (typeof this.game.cloneState === "function"){
+        const root=this.game.cloneState();
+        move=this._chooseAIMove(root, this.aiDepth);
+      }
+      if (!move){
+        const fallbackMoves=this._enumerateMoves(this.game);
+        if (fallbackMoves.length){
+          move=fallbackMoves[Math.floor(Math.random()*fallbackMoves.length)];
+        }
+      }
+      if (!move){
+        this._aiThinking=false;
+        this._setControlsDisabled(false);
+        return;
+      }
+      this.undo_stack.push(this.snapshot());
+      this.game.pending_cross=[move.nid, move.state];
+      const result=this.game.commit_and_score();
+      this._finalizeCommit(result, move);
+      this._aiThinking=false;
+      this._setControlsDisabled(false);
+      this._queueAIMoveIfNeeded();
+    }
+
+    _chooseAIMove(gameState, depth){
+      const moves=this._enumerateMoves(gameState);
+      if (!moves.length) return null;
+      let bestMove=null;
+      let bestScore=-Infinity;
+      let alpha=-Infinity, beta=Infinity;
+      for (const move of moves){
+        const child=gameState.cloneState();
+        child.pending_cross=[move.nid, move.state];
+        child.commit_and_score();
+        const score=this._minimax(child, depth-1, alpha, beta, this.aiPlayerIndex);
+        if (score>bestScore){
+          bestScore=score;
+          bestMove=move;
+        }
+        alpha=Math.max(alpha, bestScore);
+        if (beta<=alpha) break;
+      }
+      return bestMove;
+    }
+
+    _enumerateMoves(game){
+      const moves=[];
+      if (!game || !game.cross_state) return moves;
+      for (const key of Object.keys(game.cross_state)){
+        if (game.cross_state[key]==='X'){
+          const nid=parseInt(key,10);
+          moves.push({nid, state:'A'});
+          moves.push({nid, state:'B'});
+        }
+      }
+      return moves;
+    }
+
+    _minimax(game, depth, alpha, beta, aiIndex){
+      if (depth<=0 || !game || game.finished){
+        return this._evaluateGame(game, aiIndex);
+      }
+      const moves=this._enumerateMoves(game);
+      if (!moves.length){
+        return this._evaluateGame(game, aiIndex);
+      }
+      const maximizing = game.player===aiIndex;
+      if (maximizing){
+        let value=-Infinity;
+        for (const move of moves){
+          const child=game.cloneState();
+          child.pending_cross=[move.nid, move.state];
+          child.commit_and_score();
+          const score=this._minimax(child, depth-1, alpha, beta, aiIndex);
+          value=Math.max(value, score);
+          alpha=Math.max(alpha, value);
+          if (beta<=alpha) break;
+        }
+        return value;
+      }else{
+        let value=Infinity;
+        for (const move of moves){
+          const child=game.cloneState();
+          child.pending_cross=[move.nid, move.state];
+          child.commit_and_score();
+          const score=this._minimax(child, depth-1, alpha, beta, aiIndex);
+          value=Math.min(value, score);
+          beta=Math.min(beta, value);
+          if (beta<=alpha) break;
+        }
+        return value;
+      }
+    }
+
+    _evaluateGame(game, aiIndex){
+      if (!game) return 0;
+      const opponent=aiIndex^1;
+      const scoreDelta=(game.scores?.[aiIndex] ?? 0) - (game.scores?.[opponent] ?? 0);
+      const remaining=this._enumerateMoves(game).length/2;
+      const turnBias = game.player===aiIndex ? 0.05 : -0.05;
+      return scoreDelta - 0.01*remaining + turnBias;
     }
 
     snapshot(){
@@ -1218,24 +1640,90 @@
     }
 
     _bindEvents(){
-      const btnConfirm=document.getElementById("btn-confirm");
-      if (btnConfirm){
-        btnConfirm.addEventListener("click", ()=>{ this._commitPending(); });
+      const startPvp=this.menuStartPvpBtn;
+      if (startPvp){
+        startPvp.addEventListener("click", ()=>{
+          this._enterGameMode("pvp");
+        });
       }
-      const btnNew=document.getElementById("btn-new");
-      if (btnNew){
-        btnNew.addEventListener("click", ()=>{ this._startNewGame(); });
+      const startPvc=this.menuStartPvcBtn;
+      if (startPvc){
+        startPvc.addEventListener("click", ()=>{
+          this._setMenuSelection("pvc");
+          this._showDifficultySelector();
+        });
       }
-      document.getElementById("btn-undo").addEventListener("click", ()=>{
-        if (this.undo_stack.length){
-          this.restore(this.undo_stack.pop());
-          this._syncGameOverOverlay();
-        }
+      const startOnline=this.menuStartOnlineBtn;
+      if (startOnline){
+        startOnline.addEventListener("click", ()=>{
+          this._showOnlineSetup();
+        });
+      }
+      const menuRules=document.getElementById("menu-open-rules");
+      if (menuRules){
+        menuRules.addEventListener("click", ()=>{ this._showRulesScreen(); });
+      }
+      if (this.menuBackBtn){
+        this.menuBackBtn.addEventListener("click", ()=>{ this._showMenuRoot(); });
+      }
+      if (this.rulesBackBtn){
+        this.rulesBackBtn.addEventListener("click", ()=>{ this._showMenuRoot(); });
+      }
+      if (this.btnReturnMenu){
+        this.btnReturnMenu.addEventListener("click", ()=>{ this._returnToMenu(); });
+      }
+      if (this.onlineHostCreateBtn){
+        this.onlineHostCreateBtn.addEventListener("click", ()=>{ this._onlineStartHosting(); });
+      }
+      if (this.onlineHostApplyBtn){
+        this.onlineHostApplyBtn.addEventListener("click", ()=>{ this._onlineApplyHostAnswer(); });
+      }
+      if (this.onlineGuestConnectBtn){
+        this.onlineGuestConnectBtn.addEventListener("click", ()=>{ this._onlineJoinFromOffer(); });
+      }
+      if (this.onlineCancelBtn){
+        this.onlineCancelBtn.addEventListener("click", ()=>{ this._showMenuRoot(); });
+      }
+      document.querySelectorAll(".difficulty-btn").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const depth=parseInt(btn.dataset.depth, 10) || 1;
+          this._enterGameMode("pvc", depth);
+        });
       });
+
+      if (this.btnConfirm){
+        this.btnConfirm.addEventListener("click", ()=>{
+          if (this._isInteractionLocked()) return;
+          this._commitPending();
+        });
+      }
+      if (this.btnNew){
+        this.btnNew.addEventListener("click", ()=>{
+          if (!this._isInMatch()) return;
+          if (this.onlineActive){
+            if (this.onlineRole!=="host") return;
+            const seed=Math.floor(Math.random()*1e9);
+            this._startNewGame(seed, {broadcast:true});
+          }else{
+            this._startNewGame();
+          }
+        });
+      }
+      if (this.btnUndo){
+        this.btnUndo.addEventListener("click", ()=>{
+          if (!this._isInMatch() || this._aiThinking) return;
+          if (this.onlineActive) return;
+          if (this.undo_stack.length){
+            this.restore(this.undo_stack.pop());
+            this._syncGameOverOverlay();
+            this._queueAIMoveIfNeeded();
+          }
+        });
+      }
       const btnOverlayNew=document.getElementById("game-over-new");
       if (btnOverlayNew){
         btnOverlayNew.addEventListener("click", ()=>{
-          if (btnNew){ btnNew.click(); }
+          if (this.btnNew){ this.btnNew.click(); }
           else{ this._startNewGame(); }
         });
       }
@@ -1248,6 +1736,7 @@
       const crossInput=document.getElementById("cross-count");
       if (crossInput){
         const apply=()=>{
+          if (this.onlineActive) return;
           const prevTarget=this.targetCrossCount;
           const nextTarget=this._readCrossCount();
           if (nextTarget===prevTarget && this.game && !this.game.finished && this.game.nodes){
@@ -1266,6 +1755,8 @@
       }
 
       this.canvas.addEventListener("mousedown", (ev)=>{
+        if (!this._isInMatch()) return;
+        if (this._isInteractionLocked()) return;
         if (ev.button!==0 || this.game.finished) return;
         const rect=this.canvas.getBoundingClientRect();
         // because we scaled the context by DPR, use CSS pixels here
@@ -1284,40 +1775,95 @@
         }else{
           this.game.cycle_crossing_state(nid);
         }
+        this._syncPendingWithOnline();
       });
 
       window.addEventListener("keydown", (ev)=>{
+        if (!this._isInMatch()) return;
         if (ev.key==="Enter" || ev.key==="c"){
+          if (this._isInteractionLocked()) return;
           this._commitPending();
         }else if (ev.key==="n"){
-          this._startNewGame();
+          if (this.onlineActive){
+            if (this.onlineRole!=="host") return;
+            const seed=Math.floor(Math.random()*1e9);
+            this._startNewGame(seed, {broadcast:true});
+          }else{
+            this._startNewGame();
+          }
         }else if (ev.key==="u" || ev.key==="Backspace"){
-          if (this.undo_stack.length) this.restore(this.undo_stack.pop());
-          this._syncGameOverOverlay();
+          if (this._aiThinking) return;
+          if (this.onlineActive) return;
+          if (this.undo_stack.length){
+            this.restore(this.undo_stack.pop());
+            this._syncGameOverOverlay();
+            this._queueAIMoveIfNeeded();
+          }
         }
       });
     }
 
     _commitPending(){
+      if (!this._isInMatch()) return;
+      if (this._isComputerTurn() || this._aiThinking) return;
+      if (this.onlineActive && this.game.player!==this.onlinePlayerIndex) return;
       if (!this.game.pending_cross) return;
       this.undo_stack.push(this.snapshot());
+      const move=this.game.pending_cross ? {nid:this.game.pending_cross[0], state:this.game.pending_cross[1]} : null;
       const result=this.game.commit_and_score();
+      this._finalizeCommit(result, move);
+      this._queueAIMoveIfNeeded();
+    }
+
+    _finalizeCommit(result, move=null){
+      if (this.onlineActive && !this._suspendOnline && move){
+        this._broadcastOnline({type:"commit", move});
+      }
       const awards=result && result.awards ? result.awards : [];
       if (awards.length){
-        const msg = awards.map(a => `+1 ${a.type==='outside'?'outside':'disk'} (P${a.player+1})`).join("; ");
+        const msg = awards.map(a => {
+          const token=a.type==='outside'?'outside':'disk';
+          const label=this._playerDisplayName(a.player);
+          return `+1 ${token} (${label})`;
+        }).join("; ");
         this.renderer.showToast(msg, 1500);
       }
       if (result && result.gameOver){
         this._handleGameOver(result.gameOver, {triggerEgg:true});
+        this._cancelPendingAI();
       }else{
         this._clearVictoryDisplay();
       }
+      if (this.onlineActive){
+        if (result && result.gameOver){
+          this._onlineStatus("Game complete.");
+        }else if (this.game && this.onlinePlayerIndex!=null){
+          this._onlineStatus(this.game.player===this.onlinePlayerIndex ? "Your turn!" : "Opponent's turn...");
+        }
+        this._refreshControlsForTurn();
+      }
     }
 
-    _startNewGame(){
-      const desired = this._readCrossCount();
+    _startNewGame(seedOverride=null, options={}){
+      if (!this._isInMatch()) return;
+      this._cancelPendingAI();
+      const broadcast = options.broadcast ?? false;
+      const forcedCount = options.forceCrossCount;
+      const crossInput=document.getElementById("cross-count");
+      let desired = (forcedCount!=null) ? forcedCount : this._readCrossCount();
       this.targetCrossCount = desired;
-      const game = this._makeGameWithBackoff(null, this.baseMinCrossSep, this.baseMinCrossAngleDeg);
+      if (forcedCount!=null && crossInput){
+        crossInput.value = `${forcedCount}`;
+      }
+      if (crossInput && this.onlineActive){
+        crossInput.disabled = true;
+      }
+      let seedToUse = seedOverride;
+      if (this.onlineActive && seedToUse==null && this.onlineRole==='host'){
+        seedToUse = Math.floor(Math.random()*1e9);
+      }
+      this._currentSeed = seedToUse;
+      const game = this._makeGameWithBackoff(seedToUse, this.baseMinCrossSep, this.baseMinCrossAngleDeg);
       const actualCrosses = typeof game.crossCount === "number"
         ? game.crossCount
         : game.nodes.reduce((sum,node)=>sum+(node.type==='cross'?1:0),0);
@@ -1327,10 +1873,26 @@
       }
       this.game = game;
       this.renderer = new Renderer(this.game, this.canvas);
+      this._applyPlayerNames();
       this.undo_stack=[];
       this._clearVictoryDisplay();
       if (actualCrosses !== desired){
         this.renderer.showToast(`Using ${actualCrosses} intersections (closest to requested ${desired}).`, 2400);
+      }
+      this._setControlsDisabled(false);
+      this._queueAIMoveIfNeeded();
+      if (this.onlineActive){
+        if (this.btnUndo) this.btnUndo.disabled=true;
+        if (this.btnNew) this.btnNew.disabled = this.onlineRole!=="host";
+        if (broadcast && this.onlineRole==='host'){
+          this._broadcastOnline({type:"newGame", seed: seedToUse, crossCount:this.targetCrossCount});
+        }
+        if (this.onlineRole==='host'){
+          this._onlineStatus("Connected — You are the host. Your turn!");
+        }else{
+          this._onlineStatus("Connected — Waiting for host move...");
+        }
+        this._refreshControlsForTurn();
       }
     }
 
@@ -1344,6 +1906,21 @@
       }else{
         this._clearVictoryDisplay();
       }
+    }
+
+    _broadcastOnline(payload){
+      if (!this.onlineActive || !this.onlineChannel || !payload || this._suspendOnline) return;
+      try{
+        this.onlineChannel.send(JSON.stringify(payload));
+      }catch(_err){
+        // ignore
+      }
+    }
+
+    _syncPendingWithOnline(){
+      if (!this.onlineActive || this._suspendOnline) return;
+      const pending=this.game && this.game.pending_cross ? {nid:this.game.pending_cross[0], state:this.game.pending_cross[1]} : null;
+      this._broadcastOnline({type:"pending", pending});
     }
 
     _handleGameOver(detail, {triggerEgg=false}={}){
@@ -1366,6 +1943,228 @@
         });
     }
 
+    _onlineStatus(text){
+      if (this.onlineStatusEl && typeof text === "string"){
+        this.onlineStatusEl.textContent=text;
+      }
+    }
+
+    async _onlineStartHosting(){
+      this._resetOnlineState();
+      this.onlineRole="host";
+      this._onlineStatus("Generating hosting code...");
+      try{
+        const pc=this._createOnlinePeer("host");
+        this.onlinePeer=pc;
+        const channel=pc.createDataChannel("splice");
+        this._setOnlineChannel(channel, "host");
+        const offer=await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        const desc=await this._waitForIce(pc);
+        if (!desc){ throw new Error("No local description available"); }
+        const encoded=this._encodeSession(desc);
+        if (this.onlineHostOffer) this.onlineHostOffer.value=encoded;
+        this._onlineStatus("Share the hosting code, then paste the opponent's answer below.");
+      }catch(err){
+        this._onlineStatus("Unable to create hosting code. Try again.");
+        console.error("online host error", err);
+      }
+    }
+
+    async _onlineApplyHostAnswer(){
+      if (!this.onlinePeer){
+        this._onlineStatus("Create a hosting code first.");
+        return;
+      }
+      const answer=this.onlineHostAnswer ? this.onlineHostAnswer.value.trim() : "";
+      if (!answer){
+        this._onlineStatus("Paste the opponent's answer before applying.");
+        return;
+      }
+      try{
+        const desc=this._decodeSession(answer);
+        await this.onlinePeer.setRemoteDescription(desc);
+        this._onlineStatus("Answer applied. Waiting for the opponent to connect...");
+      }catch(err){
+        this._onlineStatus("Could not apply answer. Check the code and try again.");
+        console.error("apply answer", err);
+      }
+    }
+
+    async _onlineJoinFromOffer(){
+      this._resetOnlineState();
+      this.onlineRole="guest";
+      const offerText=this.onlineGuestOffer ? this.onlineGuestOffer.value.trim() : "";
+      if (!offerText){
+        this._onlineStatus("Paste the host's code to join.");
+        return;
+      }
+      try{
+        const pc=this._createOnlinePeer("guest");
+        this.onlinePeer=pc;
+        const remote=this._decodeSession(offerText);
+        await pc.setRemoteDescription(remote);
+        const answer=await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        const desc=await this._waitForIce(pc);
+        if (!desc){ throw new Error("No local description available"); }
+        if (this.onlineGuestAnswer) this.onlineGuestAnswer.value=this._encodeSession(desc);
+        this._onlineStatus("Send your answer to the host, then wait for the connection.");
+      }catch(err){
+        this._onlineStatus("Unable to join with that code. Please check and try again.");
+        console.error("online join error", err);
+      }
+    }
+
+    _createOnlinePeer(role){
+      const pc=new RTCPeerConnection({
+        iceServers:[
+          {urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}
+        ]
+      });
+      pc.onconnectionstatechange=()=>{
+        if (pc.connectionState==='failed' || pc.connectionState==='disconnected' || pc.connectionState==='closed'){
+          this._onlineConnectionClosed();
+        }
+      };
+      pc.oniceconnectionstatechange=()=>{
+        if (pc.iceConnectionState==='failed' || pc.iceConnectionState==='disconnected'){
+          this._onlineConnectionClosed();
+        }
+      };
+      if (role==='guest'){
+        pc.ondatachannel=(ev)=>{
+          this._setOnlineChannel(ev.channel, "guest");
+        };
+      }
+      return pc;
+    }
+
+    _setOnlineChannel(channel, role){
+      if (!channel) return;
+      this.onlineChannel=channel;
+      channel.onopen=()=>{ this._onOnlineChannelOpen(role); };
+      channel.onclose=()=>{ this._onlineConnectionClosed(); };
+      channel.onmessage=(ev)=>{
+        this._handleOnlineMessage(ev.data);
+      };
+    }
+
+    async _waitForIce(pc){
+      if (pc.iceGatheringState === 'complete' && pc.localDescription){
+        return pc.localDescription;
+      }
+      await new Promise(resolve=>{
+        const check=()=>{
+          if (pc.iceGatheringState==='complete'){
+            pc.removeEventListener('icegatheringstatechange', check);
+            resolve();
+          }
+        };
+        pc.addEventListener('icegatheringstatechange', check);
+        setTimeout(()=>{
+          if (pc.iceGatheringState==='complete'){
+            pc.removeEventListener('icegatheringstatechange', check);
+            resolve();
+          }
+        }, 3000);
+      });
+      return pc.localDescription;
+    }
+
+    _encodeSession(desc){
+      return btoa(JSON.stringify(desc));
+    }
+
+    _decodeSession(str){
+      return JSON.parse(atob(str));
+    }
+
+    _onOnlineChannelOpen(role){
+      this._onlineStatus("Connection established. Syncing game...");
+      this._beginOnlinePlay(role);
+      if (role==='host'){
+        const seed=Math.floor(Math.random()*1e9);
+        this._startNewGame(seed, {broadcast:true});
+      }else{
+        this._onlineStatus("Connected — waiting for host to start a game.");
+      }
+    }
+
+    _beginOnlinePlay(role){
+      this.onlineActive=true;
+      this.onlineRole=role;
+      this.mode=`online-${role}`;
+      this.aiEnabled=false;
+      this.onlinePlayerIndex = role==='host' ? 0 : 1;
+      this._updateAiUi();
+      this._setSectionVisible(this.menuScreen, false);
+      this._setSectionVisible(this.rulesScreen, false);
+      this._setSectionVisible(this.onlineScreen, false);
+      this._setSectionVisible(this.gameScreen, true);
+      this._setMenuSelection(null);
+      this._resizeCanvas();
+      this.renderer._compute_view_transform();
+      this._applyPlayerNames();
+      const crossInput=document.getElementById("cross-count");
+      if (crossInput) crossInput.disabled=true;
+      if (this.btnUndo) this.btnUndo.disabled=true;
+      if (this.btnNew) this.btnNew.disabled = role!=='host';
+      this._refreshControlsForTurn();
+    }
+
+    _onlineConnectionClosed(){
+      if (!this.onlineActive) return;
+      this._onlineStatus("Connection closed. Returning to menu...");
+      if (this.renderer && this.renderer.showToast){
+        this.renderer.showToast("Online connection closed.", 2200);
+      }
+      setTimeout(()=>{ this._showMenuRoot(); }, 1400);
+    }
+
+    _handleOnlineMessage(raw){
+      let msg=null;
+      try{ msg=JSON.parse(raw); }
+      catch(_err){ return; }
+      if (!msg || typeof msg.type!=='string') return;
+      if (msg.type==="pending"){
+        this._handleOnlinePending(msg.pending);
+      }else if (msg.type==="commit"){
+        this._handleOnlineCommit(msg.move);
+      }else if (msg.type==="newGame"){
+        this._handleOnlineNewGame(msg);
+      }
+    }
+
+    _handleOnlinePending(pending){
+      if (!this.onlineActive) return;
+      this._suspendOnline=true;
+      if (pending && typeof pending.nid === 'number' && pending.state){
+        this.game.pending_cross=[pending.nid, pending.state];
+      }else{
+        this.game.pending_cross=null;
+      }
+      this._suspendOnline=false;
+      this._refreshControlsForTurn();
+    }
+
+    _handleOnlineCommit(move){
+      if (!this.onlineActive || !move) return;
+      this._suspendOnline=true;
+      this.game.pending_cross=[move.nid, move.state];
+      const result=this.game.commit_and_score();
+      this._finalizeCommit(result, move);
+      this._suspendOnline=false;
+    }
+
+    _handleOnlineNewGame(msg){
+      if (!this.onlineActive || !msg) return;
+      const count = typeof msg.crossCount === 'number' ? msg.crossCount : null;
+      this._suspendOnline=true;
+      this._startNewGame(msg.seed ?? null, {broadcast:false, forceCrossCount: count});
+      this._suspendOnline=false;
+    }
+
     _clearVictoryDisplay(){
       this._setBoardBlurred(false);
       this._hideGameOver(true);
@@ -1375,7 +2174,7 @@
     _renderGameOverCard(detail){
       const overlay=document.getElementById("game-over");
       if (!overlay) return;
-      this._setBoardBlurred(true);
+      this._setBoardBlurred(false);
       const resultEl=document.getElementById("game-over-result");
       const scoreEl=document.getElementById("game-over-score");
       const scores = detail && detail.scores ? detail.scores : this.game.scores;
@@ -1385,15 +2184,16 @@
           resultEl.textContent = "It's a tie!";
         }else{
           const winner = detail && typeof detail.winner === "number" ? detail.winner : this.game.currentWinner();
-          resultEl.textContent = winner==null ? "Game complete" : `Player ${winner+1} wins!`;
+          const winName = winner==null ? null : this._playerDisplayName(winner);
+          resultEl.textContent = winner==null ? "Game complete" : `${winName} wins!`;
         }
       }
       if (this._gameOverHideTimer){
         clearTimeout(this._gameOverHideTimer);
         this._gameOverHideTimer=null;
       }
-      overlay.hidden=false;
-      requestAnimationFrame(()=>overlay.classList.add("show"));
+      overlay.classList.remove("show");
+      overlay.hidden=true;
     }
 
     _hideGameOver(immediate=false){

@@ -8,52 +8,132 @@
 </head>
 <body>
   <div id="app">
-    <div id="title">Splice</div>
-
-    <div id="play-area">
-      <canvas id="canvas" width="900" height="900"></canvas>
-    </div>
-
-    <div id="hud">
-      <div id="score">
-        <div class="score-bubble player1">
-          <span class="score-label">Player 1</span>
-          <span class="score-value" id="score-p1">0</span>
+    <div id="main-menu" class="menu-screen">
+      <div class="menu-card">
+        <div class="menu-title">Splice</div>
+        <p class="menu-tagline">Stitch the strands, surround territory, and celebrate the perfect loop.</p>
+        <div id="menu-root-options" class="menu-options">
+          <button id="menu-start-pvp" class="btn">Player vs Player</button>
+          <button id="menu-start-pvc" class="btn">Player vs Computer</button>
+          <button id="menu-start-online" class="btn">Online Multiplayer</button>
+          <button id="menu-open-rules" class="btn outline">Rules</button>
         </div>
-        <div class="score-bubble player2">
-          <span class="score-label">Player 2</span>
-          <span class="score-value" id="score-p2">0</span>
+        <div id="menu-difficulty" class="menu-options" hidden>
+          <div class="menu-subtitle">Choose a difficulty</div>
+          <div class="menu-difficulty-buttons">
+            <button class="btn difficulty-btn" data-depth="1">Depth 1</button>
+            <button class="btn difficulty-btn" data-depth="3">Depth 3</button>
+            <button class="btn difficulty-btn" data-depth="5">Depth 5</button>
+          </div>
         </div>
-        <div class="score-bubble turn" id="score-turn">
-          <span class="score-label">Turn</span>
-          <span class="score-value">Player 1</span>
-        </div>
-      </div>
-      <div id="controls">
-        <label for="cross-count">Intersections</label>
-        <input type="number" id="cross-count" min="4" max="30" step="1" value="5" />
-      </div>
-      <div id="buttons">
-        <button id="btn-confirm" class="btn">Confirm</button>
-        <button id="btn-new" class="btn">New</button>
-        <button id="btn-undo" class="btn">Undo</button>
-      </div>
-    </div>
-
-    <div id="toast" hidden></div>
-    <div id="game-over" hidden>
-      <div class="game-over-card">
-        <div class="game-over-title">Game Over</div>
-        <div class="game-over-result" id="game-over-result">Player 1 wins!</div>
-        <div class="game-over-score" id="game-over-score">6 — 4</div>
-        <div class="game-over-actions">
-          <button id="game-over-view" class="btn">View result</button>
-          <button id="game-over-new" class="btn primary">Play again</button>
+        <div class="menu-footer">
+          <button id="menu-back" class="btn outline small" hidden>&larr; Back</button>
         </div>
       </div>
     </div>
-    <div id="raymond-egg" hidden>
-      <img src="raymond.png" alt="Raymond celebrates" />
+
+    <div id="online-setup" class="menu-screen" hidden>
+      <div class="menu-card online-card">
+        <div class="menu-title">Online Multiplayer</div>
+        <p class="menu-tagline">Share the connection code with a friend. No servers needed—just copy and paste.</p>
+        <div class="online-columns">
+          <div class="online-column">
+            <div class="online-heading">Host a Game</div>
+            <p class="online-instructions">1. Click the button to generate a hosting code.<br />2. Send the code to your opponent.<br />3. Paste their answer in the box below and apply.</p>
+            <button id="online-host-create" class="btn primary">Create Hosting Code</button>
+            <label for="online-host-offer" class="online-label">Hosting code</label>
+            <textarea id="online-host-offer" class="online-text" readonly placeholder="Generated code appears here"></textarea>
+            <label for="online-host-answer" class="online-label">Opponent answer</label>
+            <textarea id="online-host-answer" class="online-text" placeholder="Paste answer from opponent"></textarea>
+            <button id="online-host-apply" class="btn">Apply Answer</button>
+          </div>
+          <div class="online-column">
+            <div class="online-heading">Join a Game</div>
+            <p class="online-instructions">1. Paste the host's code and connect.<br />2. Send the generated answer back to the host.</p>
+            <label for="online-guest-offer" class="online-label">Host code</label>
+            <textarea id="online-guest-offer" class="online-text" placeholder="Paste host code here"></textarea>
+            <button id="online-guest-connect" class="btn">Connect &amp; Generate Answer</button>
+            <label for="online-guest-answer" class="online-label">Your answer</label>
+            <textarea id="online-guest-answer" class="online-text" readonly placeholder="Share this answer with the host"></textarea>
+          </div>
+        </div>
+        <div class="online-status" id="online-status">Waiting to start...</div>
+        <div class="menu-footer">
+          <button id="online-cancel" class="btn outline small">&larr; Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="rules-screen" class="menu-screen" hidden>
+      <div class="menu-card rules-card">
+        <div class="menu-title">Splice Rules</div>
+        <ol class="rules-list">
+          <li>Players take turns selecting an unused intersection and adjusting the crossing (A or B) to splice the strands.</li>
+          <li>When your splice closes a loop that encloses an area, you claim that region and score a point.</li>
+          <li>If you manage to encompass every claimed region within one grand loop, you earn an additional outside bonus.</li>
+          <li>The game ends when every intersection has been spliced. The higher score wins—ties are possible.</li>
+        </ol>
+        <div class="menu-footer">
+          <button id="rules-back" class="btn outline small">&larr; Main Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="game-screen" hidden>
+      <div id="game-header">
+        <button id="btn-return-menu" class="btn outline small">&larr; Menu</button>
+        <div id="title">Splice</div>
+        <div id="ai-status" hidden>
+          <span class="ai-label">Computer Opponent:</span>
+          <span id="ai-difficulty-label">Depth 1</span>
+        </div>
+      </div>
+
+      <div id="play-area">
+        <canvas id="canvas" width="900" height="900"></canvas>
+      </div>
+
+      <div id="hud">
+        <div id="score">
+          <div class="score-bubble player1">
+            <span class="score-label">Player 1</span>
+            <span class="score-value" id="score-p1">0</span>
+          </div>
+          <div class="score-bubble player2">
+            <span class="score-label">Player 2</span>
+            <span class="score-value" id="score-p2">0</span>
+          </div>
+          <div class="score-bubble turn" id="score-turn">
+            <span class="score-label">Turn</span>
+            <span class="score-value">Player 1</span>
+          </div>
+        </div>
+        <div id="controls">
+          <label for="cross-count">Intersections</label>
+          <input type="number" id="cross-count" min="4" max="30" step="1" value="5" />
+        </div>
+        <div id="buttons">
+          <button id="btn-confirm" class="btn">Confirm</button>
+          <button id="btn-new" class="btn">New</button>
+          <button id="btn-undo" class="btn">Undo</button>
+        </div>
+      </div>
+
+      <div id="toast" hidden></div>
+      <div id="game-over" hidden>
+        <div class="game-over-card">
+          <div class="game-over-title">Game Over</div>
+          <div class="game-over-result" id="game-over-result">Player 1 wins!</div>
+          <div class="game-over-score" id="game-over-score">6 — 4</div>
+          <div class="game-over-actions">
+            <button id="game-over-view" class="btn">View result</button>
+            <button id="game-over-new" class="btn primary">Play again</button>
+          </div>
+        </div>
+      </div>
+      <div id="raymond-egg" hidden>
+        <img src="raymond.png" alt="Raymond celebrates" />
+      </div>
     </div>
   </div>
 
