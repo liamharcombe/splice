@@ -12,7 +12,7 @@
   const PENDING_HALO = "#1478ff";
   const PLAY_BG = "#f5f6f9";
   const DEFAULT_CROSS_COUNT = 5;
-  const RAYMOND_EGG_ENABLED = true; // disabled per request
+  const RAYMOND_EGG_ENABLED = false; // disabled per request
 
   const rootStyle = document.documentElement && document.documentElement.style;
   if (rootStyle){
