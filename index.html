@@ -77,12 +77,16 @@
         </div>
         <div id="controls">
           <label for="cross-count">Intersections</label>
-          <input type="number" id="cross-count" min="4" max="30" step="1" value="5" />
+          <input type="number" id="cross-count" min="0" max="30" step="1" value="5" />
         </div>
         <div id="buttons">
           <button id="btn-confirm" class="btn">Confirm</button>
           <button id="btn-new" class="btn">New</button>
           <button id="btn-undo" class="btn">Undo</button>
+        </div>
+        <div id="analysis">
+          <button id="btn-analyze" class="btn outline">Analyze Winning Strategy</button>
+          <div id="analysis-result" class="analysis-result" hidden>No analysis yet.</div>
         </div>
       </div>
 

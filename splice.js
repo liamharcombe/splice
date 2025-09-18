@@ -269,7 +269,9 @@
     constructor(seed=null, min_cross_sep=0.6, min_cross_angle_deg=25.0, target_crosses=10){
       this.min_cross_sep = +min_cross_sep;
       this.min_cross_angle_rad = (Math.PI/180)*(+min_cross_angle_deg);
-      this.target_crosses = Math.max(4, Math.min(60, Math.round(+target_crosses || 10)));
+      const requested = target_crosses == null ? 10 : Number(target_crosses);
+      const normalized = Number.isFinite(requested) ? requested : 10;
+      this.target_crosses = Math.max(0, Math.min(60, Math.round(normalized)));
       this.seed = set_seed(seed);
       const [nodes,edges] = this._make_good_random_graph();
       this.nodes = nodes; this.edges=edges;
@@ -305,13 +307,11 @@
         if (res){
           const [nodes, edges] = res;
           const n_cross = nodes.reduce((a,n)=>a+(n.type==='cross'?1:0),0);
-          if (n_cross>=4){
-            const diff=Math.abs(n_cross - this.target_crosses);
-            if (diff===0) return [nodes, edges];
-            if (!best || diff<bestDiff || (diff===bestDiff && n_cross>best.crosses)){
-              best={nodes, edges, crosses:n_cross};
-              bestDiff=diff;
-            }
+          const diff=Math.abs(n_cross - this.target_crosses);
+          if (diff===0) return [nodes, edges];
+          if (!best || diff<bestDiff || (diff===bestDiff && n_cross>best.crosses)){
+            best={nodes, edges, crosses:n_cross};
+            bestDiff=diff;
           }
         }
       }
@@ -1170,11 +1170,16 @@
       this.btnUndo=document.getElementById("btn-undo");
       this.btnNew=document.getElementById("btn-new");
       this.btnReturnMenu=document.getElementById("btn-return-menu");
+      this.btnAnalyze=document.getElementById("btn-analyze");
+      this.analysisResultEl=document.getElementById("analysis-result");
+      this._analysisInProgress=false;
+      this._analysisToken=0;
       this._bindEvents();
       window.addEventListener("resize", ()=>{ this._resizeCanvas(); this.renderer._compute_view_transform(); });
       if (mismatch){
         this.renderer.showToast(`Using ${initialCrosses} intersections (closest to requested ${desired}).`, 2400);
       }
+      this._clearAnalysisResult();
       this._showMenuRoot();
     }
 
@@ -1184,7 +1189,7 @@
       if (input){
         const parsed = parseInt(input.value, 10);
         if (!Number.isNaN(parsed)) value = parsed;
-        value = Math.max(4, Math.min(30, value));
+        value = Math.max(0, Math.min(30, value));
         if (`${value}` !== input.value) input.value = `${value}`;
       }
       return value;
@@ -1309,6 +1314,25 @@
     _setControlsDisabled(disabled){
       if (this.btnConfirm) this.btnConfirm.disabled = !!disabled;
       if (this.btnUndo) this.btnUndo.disabled = !!disabled;
+      if (this.btnAnalyze){
+        this.btnAnalyze.disabled = !!disabled || !!this._analysisInProgress;
+      }
+    }
+
+    _setAnalysisResult(text, status="idle"){
+      if (!this.analysisResultEl) return;
+      this.analysisResultEl.textContent = text;
+      this.analysisResultEl.dataset.status = status;
+      this.analysisResultEl.hidden = false;
+    }
+
+    _clearAnalysisResult(){
+      this._setAnalysisResult("No analysis yet.", "idle");
+    }
+
+    _invalidateAnalysis(){
+      this._analysisToken++;
+      this._clearAnalysisResult();
     }
 
     _refreshControlsForTurn(){
@@ -1536,6 +1560,140 @@
       return scoreDelta - 0.01*remaining + turnBias;
     }
 
+    _analyzeWinningStrategy(){
+      if (!this._isInMatch() || !this.game) return;
+      if (this._analysisInProgress) return;
+      if (this._aiThinking){
+        this._setAnalysisResult("Wait for the computer to finish its move before analyzing.", "warn");
+        return;
+      }
+      if (this.game.pending_cross){
+        this._setAnalysisResult("Confirm or cancel the highlighted intersection before analyzing.", "warn");
+        return;
+      }
+      const remaining=this._enumerateMoves(this.game).length/2;
+      const LIMIT=18;
+      if (remaining>LIMIT){
+        this._setAnalysisResult(`Analysis supports up to ${LIMIT} unresolved intersections (current: ${remaining}).`, "warn");
+        return;
+      }
+      const token=++this._analysisToken;
+      this._analysisInProgress=true;
+      if (this.btnAnalyze) this.btnAnalyze.disabled=true;
+      this._setAnalysisResult("Analyzing…", "working");
+      window.setTimeout(()=>{
+        try{
+          const clone=this.game.cloneState();
+          if (clone.pending_cross) clone.pending_cross=null;
+          const cache=new Map();
+          const nowFn = (typeof performance!=="undefined" && typeof performance.now==="function") ? ()=>performance.now() : ()=>Date.now();
+          const start=nowFn();
+          const outcome=this._solvePerfect(clone, cache, -Infinity, Infinity);
+          const elapsed=Math.max(0, Math.round(nowFn()-start));
+          const delta = outcome && typeof outcome.delta === "number" ? outcome.delta : 0;
+          let status="draw";
+          let message="Perfect play results in a tie.";
+          if (Math.abs(delta) < 1e-9){
+            status="draw";
+            message = `Perfect play results in a tie (${elapsed} ms).`;
+          }else if (delta>0){
+            const margin=Math.max(1, Math.round(Math.abs(delta)));
+            const marginText = margin===1 ? "1 point" : `${margin} points`;
+            status="player1";
+            message = `Player 1 can force a win by ${marginText} (${elapsed} ms).`;
+          }else{
+            const margin=Math.max(1, Math.round(Math.abs(delta)));
+            const marginText = margin===1 ? "1 point" : `${margin} points`;
+            status="player2";
+            message = `Player 2 can force a win by ${marginText} (${elapsed} ms).`;
+          }
+          if (token === this._analysisToken){
+            this._setAnalysisResult(message, status);
+          }
+        }catch(err){
+          console.error("Splice analysis failed", err);
+          if (token === this._analysisToken){
+            this._setAnalysisResult("Analysis failed. Check console for details.", "error");
+          }
+        }finally{
+          this._analysisInProgress=false;
+          if (this.btnAnalyze){
+            const disable=this._isInteractionLocked();
+            this.btnAnalyze.disabled=disable;
+          }
+        }
+      }, 24);
+    }
+
+    _analysisKey(game){
+      const crossState=game && game.cross_state ? Object.keys(game.cross_state)
+        .sort((a,b)=>Number(a)-Number(b))
+        .map(k=>`${k}:${game.cross_state[k]}`)
+        .join("|") : "";
+      const scoresArr = game && game.scores ? game.scores : [0,0];
+      const scores=`${scoresArr[0]}-${scoresArr[1]}`;
+      const claimed = (game && game.claimed ? game.claimed : [])
+        .map(cl=>{
+          const nodes=(cl.nodes || []).join("-");
+          const labelArr = Array.isArray(cl.label) ? cl.label : null;
+          const lbl = (labelArr && labelArr.length>=2)
+            ? `${Math.round((labelArr[0] ?? 0)*1000)/1000},${Math.round((labelArr[1] ?? 0)*1000)/1000}`
+            : "";
+          return `${cl.owner ?? "?"}:${cl.outside?1:0}:${nodes}:${lbl}`;
+        })
+        .sort()
+        .join(";");
+      const seen = Array.from(game && game.seen_simple_cycles ? game.seen_simple_cycles : []).sort().join(";");
+      const pending = game && game.pending_cross ? `${game.pending_cross[0]}${game.pending_cross[1]}` : "-";
+      const finished = game && game.finished ? "1" : "0";
+      const player = game && typeof game.player === "number" ? game.player : 0;
+      return `${crossState}#p${player}#s${scores}#c${claimed}#o${seen}#x${pending}#f${finished}`;
+    }
+
+    _solvePerfect(game, cache, alpha, beta){
+      const key=this._analysisKey(game);
+      if (cache.has(key)) return cache.get(key);
+      if (!game){
+        const res={delta:0};
+        cache.set(key, res);
+        return res;
+      }
+      if (game.finished){
+        const delta=(game.scores?.[0] ?? 0) - (game.scores?.[1] ?? 0);
+        const res={delta};
+        cache.set(key, res);
+        return res;
+      }
+      const moves=this._enumerateMoves(game);
+      if (!moves.length){
+        const delta=(game.scores?.[0] ?? 0) - (game.scores?.[1] ?? 0);
+        const res={delta};
+        cache.set(key, res);
+        return res;
+      }
+      const maximizing = game.player===0;
+      let best = maximizing ? -Infinity : Infinity;
+      for (const move of moves){
+        const child=game.cloneState();
+        child.pending_cross=[move.nid, move.state];
+        child.commit_and_score();
+        if (child.pending_cross) child.pending_cross=null;
+        const outcome=this._solvePerfect(child, cache, alpha, beta);
+        const value=outcome.delta;
+        if (maximizing){
+          if (value>best) best=value;
+          if (value>alpha) alpha=value;
+        }else{
+          if (value<best) best=value;
+          if (value<beta) beta=value;
+        }
+        if (beta<=alpha) break;
+      }
+      const res={delta:best};
+      cache.set(key, res);
+      return res;
+    }
+
     snapshot(){
       const cs={...this.game.cross_state};
       const player=this.game.player;
@@ -1564,6 +1722,7 @@
       this.game.seen_simple_cycles=new Set(seen);
       this.game.finished=!!finished;
       this.game.pending_cross=null;
+      this._invalidateAnalysis();
     }
 
     _bindEvents(){
@@ -1620,6 +1779,11 @@
             this._syncGameOverOverlay();
             this._queueAIMoveIfNeeded();
           }
+        });
+      }
+      if (this.btnAnalyze){
+        this.btnAnalyze.addEventListener("click", ()=>{
+          this._analyzeWinningStrategy();
         });
       }
       const btnOverlayNew=document.getElementById("game-over-new");
@@ -1708,6 +1872,7 @@
     }
 
     _finalizeCommit(result, move=null){
+      this._invalidateAnalysis();
       const awards=result && result.awards ? result.awards : [];
       if (awards.length){
         const msg = awards.map(a => {
@@ -1743,6 +1908,7 @@
       this._applyPlayerNames();
       this.undo_stack=[];
       this._clearVictoryDisplay();
+      this._invalidateAnalysis();
       if (actualCrosses !== desired){
         this.renderer.showToast(`Using ${actualCrosses} intersections (closest to requested ${desired}).`, 2400);
       }

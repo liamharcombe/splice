@@ -211,6 +211,44 @@ html, body{ margin:0; height:100%; background:var(--bg); color:var(--text); font
   transform:translateY(-2px);
 }
 #buttons{ display:flex; gap:12px; }
+#analysis{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  min-width:200px;
+}
+.analysis-result{
+  font-size:14px;
+  min-height:20px;
+}
+.analysis-result[data-status="idle"]{
+  color:#485072;
+  opacity:0.85;
+}
+.analysis-result[data-status="working"]{
+  color:#1f2c58;
+  font-weight:600;
+}
+.analysis-result[data-status="player1"]{
+  color:var(--player1-bg);
+  font-weight:700;
+}
+.analysis-result[data-status="player2"]{
+  color:var(--player2-bg);
+  font-weight:700;
+}
+.analysis-result[data-status="draw"]{
+  color:#213360;
+  font-weight:600;
+}
+.analysis-result[data-status="warn"]{
+  color:#b36a0a;
+  font-weight:600;
+}
+.analysis-result[data-status="error"]{
+  color:#b02035;
+  font-weight:600;
+}
 .btn{
   padding:10px 18px; border-radius:10px; border:1px solid var(--btn-border);
   background:var(--btn-bg); cursor:pointer; font-size:15px; min-width:140px;
