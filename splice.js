@@ -1308,7 +1308,7 @@
         this.renderer.showToast(msg, 1500);
       }
       if (result && result.gameOver){
-        this._handleGameOver(result.gameOver);
+        this._handleGameOver(result.gameOver, {triggerEgg:true});
       }else{
         this._clearVictoryDisplay();
       }
@@ -1340,14 +1340,30 @@
           winner:this.game.currentWinner(),
           scores:[...this.game.scores],
           tie:this.game.currentWinner()==null,
-        });
+        }, {triggerEgg:false});
       }else{
         this._clearVictoryDisplay();
       }
     }
 
-    _handleGameOver(detail){
-      this._clearVictoryDisplay();
+    _handleGameOver(detail, {triggerEgg=false}={}){
+      const showCard = () => {
+        this._renderGameOverCard(detail);
+      };
+      if (!triggerEgg || !RAYMOND_EGG_ENABLED){
+        if (!this._gameOverPendingPromise) showCard();
+        return;
+      }
+      if (this._gameOverPendingPromise){
+        return;
+      }
+      this._hideGameOver(true);
+      this._gameOverPendingPromise = this._playVictoryEgg()
+        .catch(()=>{})
+        .then(showCard)
+        .finally(()=>{
+          this._gameOverPendingPromise=null;
+        });
     }
 
     _clearVictoryDisplay(){
